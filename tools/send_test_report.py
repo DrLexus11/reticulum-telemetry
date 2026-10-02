@@ -20,11 +20,15 @@ import telemetry_codec  # noqa: E402
 
 
 def main():
+    usage = "usage: send_test_report.py <32-hex-digit gateway destination hash>"
     if len(sys.argv) != 2 or len(sys.argv[1]) != 32:
-        sys.exit("usage: send_test_report.py <32-hex-digit gateway destination hash>")
+        sys.exit(usage)
+    try:
+        target = bytes.fromhex(sys.argv[1])   # checked before Reticulum starts
+    except ValueError:
+        sys.exit(usage)
     import RNS
     RNS.Reticulum(os.environ.get("RNS_CONFIG"))
-    target = bytes.fromhex(sys.argv[1])
     case = json.loads((ROOT / "tests/fixtures/telemetry_v1.json").read_text())["encode"][0]
     payload = bytes.fromhex(case["hex"])
     if not RNS.Transport.has_path(target):

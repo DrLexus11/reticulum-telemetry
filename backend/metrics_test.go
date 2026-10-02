@@ -61,7 +61,19 @@ func TestAnAbsentBatteryRemovesTheSeriesRatherThanZeroingIt(t *testing.T) {
 func TestABadMessageChangesNothing(t *testing.T) {
 	m := NewMetrics(prometheus.NewRegistry())
 	_ = m.Apply([]byte(full))
-	for _, bad := range []string{`{not json`, `{"v": 2, "sender": "0a0b0c0d"}`, `{"v": 1, "sender": "short"}`} {
+	bad := []string{
+		`{not json`,
+		`{"v": 2, "sender": "0a0b0c0d"}`,
+		`{"v": 1, "sender": "short"}`,
+		// Version and sender right, everything else missing: must not zero the series.
+		`{"v": 1, "sender": "0a0b0c0d"}`,
+		strings.Replace(full, `"sender": "0a0b0c0d"`, `"sender": "0A0B0C0D"`, 1),
+		strings.Replace(full, `"sender": "0a0b0c0d"`, `"sender": "zzzzzzzz"`, 1),
+		strings.Replace(full, `"heap_bytes": 25600`, `"heap_bytes": -1`, 1),
+		strings.Replace(full, `"reset": "panic"`, `"reset": "gremlins"`, 1),
+		strings.Replace(full, `"crashes": 9`, `"crashes": null`, 1),
+	}
+	for _, bad := range bad {
 		if err := m.Apply([]byte(bad)); err == nil {
 			t.Errorf("accepted %q", bad)
 		}
@@ -69,7 +81,7 @@ func TestABadMessageChangesNothing(t *testing.T) {
 	if got := testutil.ToFloat64(m.heap.WithLabelValues("0a0b0c0d")); got != 25600 {
 		t.Errorf("a refused message changed the heap series: %v", got)
 	}
-	if got := testutil.ToFloat64(m.refused); got != 3 {
-		t.Errorf("refused = %v, want 3", got)
+	if got := testutil.ToFloat64(m.refused); got != float64(len(bad)) {
+		t.Errorf("refused = %v, want %d", got, len(bad))
 	}
 }

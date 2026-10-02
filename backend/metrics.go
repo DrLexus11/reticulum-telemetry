@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -108,17 +109,56 @@ func contains(list []string, s string) bool {
 	return false
 }
 
-// Apply decodes one MQTT payload and sets that board's series. An error leaves
-// every series as it was: a bad message never overwrites a good report.
-func (m *Metrics) Apply(payload []byte) error {
+// Fields a version 1 report always carries (gateway/report.py). Optional ones
+// -- hops, gateway, psram, battery -- may be null; these may not be absent.
+var required = []string{"v", "sender", "received_at", "uptime_s", "reset", "boots", "crashes",
+	"panics", "heap_bytes", "largest_bytes", "interfaces_present", "interfaces_up", "ble_peers",
+	"espnow_peers", "paths", "nodes", "relaying", "relay_expected", "time_current"}
+
+var senderPattern = regexp.MustCompile(`^[0-9a-f]{8}$`)
+
+// validate checks a message completely before anything is set: a message
+// missing a field would otherwise zero that board's series.
+func validate(payload []byte) (Report, error) {
 	var r Report
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &fields); err != nil {
+		return r, err
+	}
+	for _, name := range required {
+		raw, ok := fields[name]
+		if !ok || string(raw) == "null" {
+			return r, fmt.Errorf("required field %q missing", name)
+		}
+	}
 	if err := json.Unmarshal(payload, &r); err != nil {
+		return r, err
+	}
+	if r.V != 1 {
+		return r, fmt.Errorf("version %d, not 1", r.V)
+	}
+	if !senderPattern.MatchString(r.Sender) {
+		return r, fmt.Errorf("sender %q is not 8 lower-case hex digits", r.Sender)
+	}
+	for _, v := range []float64{r.ReceivedAt, r.UptimeS, r.Boots, r.Crashes, r.Panics, r.HeapBytes,
+		r.LargestBytes, r.BLEPeers, r.ESPNowPeers, r.Paths, r.Nodes} {
+		if v < 0 {
+			return r, fmt.Errorf("negative count or size")
+		}
+	}
+	if !contains(resets, r.Reset) {
+		return r, fmt.Errorf("unknown reset reason %q", r.Reset)
+	}
+	return r, nil
+}
+
+// Apply validates one MQTT payload and sets that board's series. A refused
+// message leaves every series as it was: it never overwrites a good report.
+func (m *Metrics) Apply(payload []byte) error {
+	r, err := validate(payload)
+	if err != nil {
 		m.refused.Inc()
 		return err
-	}
-	if r.V != 1 || len(r.Sender) != 8 {
-		m.refused.Inc()
-		return fmt.Errorf("not a version 1 report from an 8-hex-digit sender")
 	}
 	s := r.Sender
 	m.received.WithLabelValues(s).Set(r.ReceivedAt)
