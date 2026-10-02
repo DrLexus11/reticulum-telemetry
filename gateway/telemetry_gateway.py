@@ -69,7 +69,9 @@ class Gateway:
             if identity is None:
                 sys.exit("could not read the gateway identity at %s" % path)
             return identity
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+        parent = os.path.dirname(path)
+        if parent:   # a bare filename lives in the current directory
+            os.makedirs(parent, exist_ok=True)
         identity = self.rns.Identity()
         identity.to_file(path)
         os.chmod(path, 0o600)

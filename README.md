@@ -32,7 +32,7 @@ copied here, and `tests/test_codec_fixture.py` catches a copy that drifted.
 ```
 deploy/up.sh                                          # Mosquitto, Prometheus, Grafana
 python gateway/telemetry_gateway.py --identity ~/.config/telemetry-gateway/identity --name <gateway name>
-go build -o reticulum-telemetry-backend ./backend && ./reticulum-telemetry-backend
+(cd backend && go build -o ../reticulum-telemetry-backend .) && ./reticulum-telemetry-backend
 python tools/send_test_report.py <gateway destination hash>   # a synthetic report, end to end
 ```
 

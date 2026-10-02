@@ -313,7 +313,12 @@
         {
           "refId": "A",
           "expr": "mesh_board_paths",
-          "legendFormat": "{{sender}}"
+          "legendFormat": "{{sender}} paths"
+        },
+        {
+          "refId": "B",
+          "expr": "mesh_board_nodes",
+          "legendFormat": "{{sender}} nodes"
         }
       ]
     },
