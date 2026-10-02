@@ -1,0 +1,58 @@
+"""A decoded health report as the JSON the gateway publishes. Pure, so it is
+tested without Reticulum or a broker; telemetry_gateway.py does the I/O.
+
+One message per report, on mesh/telemetry/<sender>, retained -- a subscriber
+that starts late still sees every board's latest state. Field names follow
+the codec; byte counts stay bytes; interface sets are spelled out, because a
+dashboard filtering on "lora" should not need to know that LoRa is bit 0.
+"""
+
+import telemetry_codec as tc
+
+TOPIC_PREFIX = "mesh/telemetry/"
+
+INTERFACES = (("lora", tc.IF_LORA), ("ble", tc.IF_BLE), ("wifi", tc.IF_WIFI),
+              ("espnow", tc.IF_ESPNOW), ("halow", tc.IF_HALOW))
+
+
+def interfaces(mask):
+    return [name for name, bit in INTERFACES if mask & bit]
+
+
+def sender_hex(sender_id):
+    return "%08x" % sender_id
+
+
+def topic(sender_id):
+    return TOPIC_PREFIX + sender_hex(sender_id)
+
+
+def to_message(t, received_at, hops=None, via=None, gateway=None):
+    """The JSON body for one decoded report. None values stay null."""
+    return {
+        "v": 1,
+        "sender": sender_hex(t.sender_id),
+        "received_at": round(received_at, 3),
+        "hops": hops,
+        "via": via,
+        "gateway": gateway,
+        "uptime_s": t.uptime_s,
+        "reset": tc.RESET_NAMES.get(t.reset, "unknown"),
+        "boots": t.boots,
+        "crashes": t.crashes,
+        "panics": t.panics,
+        "heap_bytes": t.heap_bytes,
+        "largest_bytes": t.largest_bytes,
+        "psram_bytes": t.psram_bytes if t.psram_known else None,
+        "interfaces_present": interfaces(t.if_present),
+        "interfaces_up": interfaces(t.if_up),
+        "ble_peers": t.ble_peers,
+        "espnow_peers": t.espnow_peers,
+        "paths": t.paths,
+        "nodes": t.nodes,
+        "relaying": t.relaying,
+        "relay_expected": t.relay_expected,
+        "time_current": t.time_current,
+        "battery_mv": t.battery_mv if t.battery_known else None,
+        "battery_pct": t.battery_pct if t.battery_known else None,
+    }
