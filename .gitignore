@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+/reticulum-telemetry-backend
+backend/backend

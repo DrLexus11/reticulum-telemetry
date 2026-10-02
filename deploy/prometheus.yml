@@ -1,0 +1,7 @@
+# Scrapes the telemetry backend. Host network, loopback only (see up.sh).
+global:
+  scrape_interval: 15s
+scrape_configs:
+  - job_name: mesh-telemetry
+    static_configs:
+      - targets: ["127.0.0.1:9101"]
