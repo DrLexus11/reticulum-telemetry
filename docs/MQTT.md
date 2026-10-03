@@ -19,7 +19,11 @@ contract, versioned like the wire format.
 - **Retained**, so a subscriber that starts late sees every board's latest
   state at once. A board that stops reporting keeps its last message;
   `received_at` is how a consumer tells it is old.
-- **QoS 1**: a report may arrive twice, never not at all once the broker has it.
+- **QoS 1 from the gateway to the broker**: on that leg a report may arrive
+  twice, never not at all. It says nothing about subscribers: one without a
+  persistent session misses reports while it is away and gets only the
+  retained latest state when it returns. Telemetry here is **latest state**,
+  not history; history is the backend's job (Prometheus keeps the series).
   Every report carries `uptime_s` and `received_at`, so a duplicate is harmless.
 - One gateway or several: whichever gateway a report reached publishes it. Two
   gateways that both hear the same report publish the same topic; `gateway`
@@ -27,7 +31,8 @@ contract, versioned like the wire format.
 
 ### Payload, version 1
 
-An example with synthetic identifiers:
+An example with synthetic identifiers (sender, gateway and times are made up;
+the shape and the units are real):
 
 ```json
 {
