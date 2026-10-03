@@ -16,6 +16,7 @@ board --(one encrypted Reticulum packet)--> gateway --MQTT--> backend --> Promet
   `mesh/telemetry/<sender>`, retained.
 - **The backend** (`backend/`, Go) subscribes and serves Prometheus metrics,
   `mesh_board_*`, one series set per board.
+- **The topic layout** -- what is published, and what is held for commands: `docs/MQTT.md`.
 - **Deploy** (`deploy/`): Mosquitto, Prometheus and Grafana under rootless podman,
   with a provisioned "Mesh boards" dashboard.
 
