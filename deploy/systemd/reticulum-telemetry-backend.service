@@ -1,0 +1,17 @@
+# The telemetry backend: subscribes to mesh/telemetry/# and serves Prometheus
+# metrics on 127.0.0.1:9101. Installed by deploy/install-services.sh.
+[Unit]
+Description=Reticulum telemetry backend (MQTT -> Prometheus)
+After=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/reticulum-telemetry-backend
+Restart=always
+RestartSec=10
+StandardOutput=append:%h/.impr-tak/telemetry-backend.log
+StandardError=inherit
+
+[Install]
+WantedBy=default.target

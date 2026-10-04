@@ -1,6 +1,13 @@
 # Scrapes the telemetry backend. Host network, loopback only (see up.sh).
 global:
   scrape_interval: 15s
+# A report stored on the mesh while no gateway was reachable arrives late, with
+# the time it was taken; the backend writes those through the remote-write
+# receiver (up.sh). Up to two days late is accepted -- a gateway host asleep overnight,
+# a partition over a weekend.
+storage:
+  tsdb:
+    out_of_order_time_window: 48h
 scrape_configs:
   - job_name: mesh-telemetry
     static_configs:
