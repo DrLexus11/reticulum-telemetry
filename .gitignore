@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 /reticulum-telemetry-backend
 backend/backend
+
+# Host-local secrets for the production stack.
+deploy/prod/.env
