@@ -27,11 +27,16 @@ def topic(sender_id):
     return TOPIC_PREFIX + sender_hex(sender_id)
 
 
-def to_message(t, received_at, hops=None, via=None, gateway=None):
-    """The JSON body for one decoded report. None values stay null."""
+def to_message(t, received_at, hops=None, via=None, gateway=None, name=None):
+    """The JSON body for one decoded report. None values stay null.
+
+    `name` is the board's announced name (board_names.py), or None until the
+    gateway has heard one. Optional: version 1 consumers ignore it.
+    """
     return {
         "v": 1,
         "sender": sender_hex(t.sender_id),
+        "name": name,
         "received_at": round(received_at, 3),
         "hops": hops,
         "via": via,

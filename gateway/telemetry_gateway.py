@@ -22,6 +22,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import board_names  # noqa: E402
 import report  # noqa: E402
 import telemetry_codec  # noqa: E402
 
@@ -44,6 +45,22 @@ class Gateway:
         self.destination = RNS.Destination(self.identity, RNS.Destination.IN,
                                            RNS.Destination.SINGLE, APP_NAME, *ASPECTS)
         self.destination.set_packet_callback(self._packet)
+        # Boards' names, from their NomadNet announces (board_names.py), kept
+        # beside the identity so a restart names them at once.
+        self.names = board_names.BoardNames(
+            os.path.join(os.path.dirname(os.path.expanduser(identity_path)) or ".", "board_names.json"))
+        gateway = self
+
+        class _NodeAnnounces:
+            aspect_filter = "nomadnetwork.node"
+
+            def received_announce(self, destination_hash, announced_identity, app_data):
+                if announced_identity is not None and gateway.names.heard(announced_identity.hash, app_data):
+                    print("[gateway] %s is %s" % (board_names.sender_of(announced_identity.hash),
+                                                  gateway.names.name_for(board_names.sender_of(announced_identity.hash))),
+                          flush=True)
+
+        RNS.Transport.register_announce_handler(_NodeAnnounces())
         self.announce_interval = announce_interval
         self.name = name
         self.received = 0
@@ -88,7 +105,8 @@ class Gateway:
         self.received += 1
         via = str(packet.receiving_interface) if getattr(packet, "receiving_interface", None) else None
         message = report.to_message(t, time.time(), hops=getattr(packet, "hops", None),
-                                    via=via, gateway=self.name)
+                                    via=via, gateway=self.name,
+                                    name=self.names.name_for(report.sender_hex(t.sender_id)))
         self.mqtt.publish(report.topic(t.sender_id), json.dumps(message), qos=1, retain=True)
         print("[gateway] %s up %ds heap %dK largest %dK crashes %d, %s hop(s)"
               % (message["sender"], t.uptime_s, t.heap_bytes // 1024, t.largest_bytes // 1024,

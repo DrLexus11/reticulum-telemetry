@@ -85,3 +85,32 @@ func TestABadMessageChangesNothing(t *testing.T) {
 		t.Errorf("refused = %v, want %d", got, len(bad))
 	}
 }
+
+func TestTheBoardsNameIsOneInfoSeries(t *testing.T) {
+	m := NewMetrics(prometheus.NewRegistry())
+	// Not yet named: shown by its sender id.
+	if err := m.Apply([]byte(full)); err != nil {
+		t.Fatal(err)
+	}
+	if got := testutil.CollectAndCount(m.info); got != 1 {
+		t.Fatalf("%d info series, want 1", got)
+	}
+	named := strings.Replace(full, `"sender": "0a0b0c0d",`, `"sender": "0a0b0c0d", "name": "board-1",`, 1)
+	if err := m.Apply([]byte(named)); err != nil {
+		t.Fatal(err)
+	}
+	if got := testutil.CollectAndCount(m.info); got != 1 {
+		t.Fatalf("%d info series after naming, want 1", got)
+	}
+	// A later report without a name keeps the one heard.
+	if err := m.Apply([]byte(full)); err != nil {
+		t.Fatal(err)
+	}
+	renamed := strings.Replace(full, `"sender": "0a0b0c0d",`, `"sender": "0a0b0c0d", "name": "board-2",`, 1)
+	if err := m.Apply([]byte(renamed)); err != nil {
+		t.Fatal(err)
+	}
+	if got := testutil.CollectAndCount(m.info); got != 1 {
+		t.Fatalf("%d info series after a rename, want 1", got)
+	}
+}

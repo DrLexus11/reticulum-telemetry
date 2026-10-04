@@ -1,19 +1,21 @@
 {
   "uid": "mesh-boards",
   "title": "Mesh boards",
+  "tags": [
+    "mesh",
+    "telemetry"
+  ],
+  "timezone": "browser",
+  "refresh": "30s",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "time": {
-    "from": "now-6h",
+    "from": "now-24h",
     "to": "now"
   },
-  "refresh": "30s",
-  "tags": [
-    "mesh"
-  ],
   "panels": [
     {
-      "id": 100,
+      "id": 1,
       "type": "alertlist",
       "title": "Fleet alerts -- firing and pending",
       "gridPos": {
@@ -40,93 +42,545 @@
       }
     },
     {
-      "id": 1,
-      "type": "table",
-      "title": "Boards -- one row each, latest report",
-      "gridPos": {
-        "h": 9,
-        "w": 24,
-        "x": 0,
-        "y": 6
-      },
+      "id": 2,
+      "type": "stat",
+      "title": "Reporting now",
+      "description": "Boards heard from in the last 15 minutes",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 6,
+        "h": 4
+      },
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "refId": "A",
-          "expr": "time() - mesh_board_report_received_timestamp_seconds",
-          "format": "table",
-          "instant": true
+          "expr": "count((time() - mesh_board_report_received_timestamp_seconds) < 900) or vector(0)",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Silent",
+      "description": "Boards not heard from for 15 minutes or more",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 6,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "count((time() - mesh_board_report_received_timestamp_seconds) >= 900) or vector(0)",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Restarts, last 24 h",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 6,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "sum(increase(mesh_board_crashes[24h]) + increase(mesh_board_panics[24h])) or vector(0)",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 3
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Low on memory",
+      "description": "Boards whose largest free block is under 20 KB",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 6,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "count(mesh_board_heap_largest_block_bytes < 20480) or vector(0)",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "Boards -- one row each, latest report",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 10,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "max by (sender, name) (mesh_board_info)",
+          "instant": true,
+          "range": false,
+          "format": "table"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "refId": "B",
-          "expr": "mesh_board_uptime_seconds",
-          "format": "table",
-          "instant": true
+          "expr": "time() - max by (sender) (mesh_board_report_received_timestamp_seconds)",
+          "instant": true,
+          "range": false,
+          "format": "table"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "refId": "C",
-          "expr": "mesh_board_heap_free_bytes",
-          "format": "table",
-          "instant": true
+          "expr": "max by (sender) (mesh_board_uptime_seconds)",
+          "instant": true,
+          "range": false,
+          "format": "table"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "refId": "D",
-          "expr": "mesh_board_heap_largest_block_bytes",
-          "format": "table",
-          "instant": true
+          "expr": "max by (sender) (mesh_board_heap_free_bytes)",
+          "instant": true,
+          "range": false,
+          "format": "table"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "refId": "E",
-          "expr": "mesh_board_crashes",
-          "format": "table",
-          "instant": true
+          "expr": "max by (sender) (mesh_board_heap_largest_block_bytes)",
+          "instant": true,
+          "range": false,
+          "format": "table"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "refId": "F",
-          "expr": "mesh_board_panics",
-          "format": "table",
-          "instant": true
+          "expr": "max by (sender) (mesh_board_crashes + mesh_board_panics)",
+          "instant": true,
+          "range": false,
+          "format": "table"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "refId": "G",
-          "expr": "mesh_board_hops_to_gateway",
-          "format": "table",
-          "instant": true
+          "expr": "max by (sender) (mesh_board_hops_to_gateway)",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "H",
+          "expr": "sum by (sender) (mesh_board_interface_up)",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "I",
+          "expr": "max by (sender) (mesh_board_paths)",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "J",
+          "expr": "max by (sender) (mesh_board_nodes)",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "K",
+          "expr": "max by (sender) (mesh_board_time_current)",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "L",
+          "expr": "max by (sender) (mesh_board_relaying)",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "M",
+          "expr": "max by (sender) (mesh_board_psram_free_bytes)",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "N",
+          "expr": "max by (sender) (mesh_board_battery_percent)",
+          "instant": true,
+          "range": false,
+          "format": "table"
         }
       ],
       "transformations": [
         {
-          "id": "merge",
-          "options": {}
+          "id": "joinByField",
+          "options": {
+            "byField": "sender",
+            "mode": "outer"
+          }
         },
         {
           "id": "organize",
           "options": {
             "excludeByName": {
               "Time": true,
-              "__name__": true,
-              "instance": true,
-              "job": true
+              "Value #A": true,
+              "Time B": true,
+              "Time C": true,
+              "Time D": true,
+              "Time E": true,
+              "Time F": true,
+              "Time G": true,
+              "Time H": true,
+              "Time I": true,
+              "Time J": true,
+              "Time K": true,
+              "Time L": true,
+              "Time M": true,
+              "Time N": true
             },
             "renameByName": {
-              "sender": "Board",
-              "Value #A": "Last report (s ago)",
-              "Value #B": "Uptime",
-              "Value #C": "Heap free",
-              "Value #D": "Largest block",
-              "Value #E": "Crashes",
-              "Value #F": "Panics",
-              "Value #G": "Hops"
+              "name": "Board",
+              "sender": "Sender id",
+              "Value #B": "Last report",
+              "Value #C": "Uptime",
+              "Value #D": "Heap free",
+              "Value #E": "Largest block",
+              "Value #F": "Restarts",
+              "Value #G": "Hops",
+              "Value #H": "Carriers up",
+              "Value #I": "Paths",
+              "Value #J": "Nodes",
+              "Value #K": "Clock",
+              "Value #L": "Relaying",
+              "Value #M": "PSRAM free",
+              "Value #N": "Battery"
+            },
+            "indexByName": {
+              "Board": 0,
+              "Sender id": 1,
+              "Last report": 2,
+              "Uptime": 3,
+              "Heap free": 4,
+              "Largest block": 5,
+              "Restarts": 6,
+              "Hops": 7,
+              "Carriers up": 8,
+              "Paths": 9,
+              "Nodes": 10,
+              "Clock": 11,
+              "Relaying": 12,
+              "PSRAM free": 13,
+              "Battery": 14
             }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "Board"
+              }
+            ]
           }
         }
       ],
       "fieldConfig": {
-        "defaults": {},
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
         "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Last report"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 900
+                    },
+                    {
+                      "color": "red",
+                      "value": 1800
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
           {
             "matcher": {
               "id": "byName",
@@ -135,7 +589,7 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "s"
+                "value": "dtdurations"
               }
             ]
           },
@@ -160,18 +614,6 @@
               {
                 "id": "unit",
                 "value": "bytes"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Last report (s ago)"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "s"
               },
               {
                 "id": "thresholds",
@@ -179,203 +621,603 @@
                   "mode": "absolute",
                   "steps": [
                     {
-                      "color": "green",
+                      "color": "red",
                       "value": null
                     },
                     {
                       "color": "orange",
-                      "value": 600
+                      "value": 20480
                     },
                     {
-                      "color": "red",
-                      "value": 1200
+                      "color": "green",
+                      "value": 40960
                     }
                   ]
                 }
               },
               {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
                 "id": "custom.cellOptions",
                 "value": {
-                  "type": "color-background"
+                  "type": "color-text"
                 }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Restarts"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "description",
+                "value": "Lifetime crashes + panics, as the board counts them"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Hops"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Carriers up"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Paths"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Nodes"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Clock"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "synced",
+                        "color": "green"
+                      },
+                      "0": {
+                        "text": "not synced",
+                        "color": "orange"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Relaying"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "yes"
+                      },
+                      "0": {
+                        "text": "no"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "PSRAM free"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Battery"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
               }
             ]
           }
         ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
       }
     },
     {
-      "id": 2,
+      "id": 7,
+      "type": "state-timeline",
+      "title": "Carriers up",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "max by (sender, interface) (mesh_board_interface_present == 1) * on(sender, interface) group_left max by (sender, interface) (mesh_board_interface_up) * on(sender) group_left(name) max by (sender, name) (mesh_board_info)",
+          "legendFormat": "{{name}} {{interface}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "up",
+                  "color": "green"
+                },
+                "0": {
+                  "text": "down",
+                  "color": "red"
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showValue": "never",
+        "mergeValues": true,
+        "alignValue": "left",
+        "rowHeight": 0.8
+      }
+    },
+    {
+      "id": 8,
       "type": "timeseries",
       "title": "Heap free",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 15
-      },
+      "description": "",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes"
-        },
-        "overrides": []
+      "gridPos": {
+        "x": 0,
+        "y": 26,
+        "w": 12,
+        "h": 8
       },
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "refId": "A",
-          "expr": "mesh_board_heap_free_bytes",
-          "legendFormat": "{{sender}}"
+          "expr": "max by (sender) (mesh_board_heap_free_bytes) * on(sender) group_left(name) max by (sender, name) (mesh_board_info)",
+          "legendFormat": "{{name}}"
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "lineWidth": 2,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
     },
     {
-      "id": 3,
+      "id": 9,
       "type": "timeseries",
       "title": "Largest free block",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "gridPos": {
-        "h": 8,
-        "w": 12,
         "x": 12,
-        "y": 15
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "mesh_board_heap_largest_block_bytes",
-          "legendFormat": "{{sender}}"
-        }
-      ]
-    },
-    {
-      "id": 4,
-      "type": "timeseries",
-      "title": "Restarts (crashes + panics)",
-      "gridPos": {
-        "h": 8,
+        "y": 26,
         "w": 12,
-        "x": 0,
-        "y": 23
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
+        "h": 8
       },
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "refId": "A",
-          "expr": "mesh_board_crashes + mesh_board_panics",
-          "legendFormat": "{{sender}}"
+          "expr": "max by (sender) (mesh_board_heap_largest_block_bytes) * on(sender) group_left(name) max by (sender, name) (mesh_board_info)",
+          "legendFormat": "{{name}}"
         }
-      ]
-    },
-    {
-      "id": 5,
-      "type": "timeseries",
-      "title": "Carriers up",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 23
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short"
+          "unit": "bytes",
+          "custom": {
+            "lineWidth": 2,
+            "spanNulls": false,
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 20480
+              },
+              {
+                "color": "green",
+                "value": 40960
+              }
+            ]
+          }
         },
         "overrides": []
       },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "mesh_board_interface_up == 1",
-          "legendFormat": "{{sender}} {{interface}}"
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
         }
-      ]
+      }
     },
     {
-      "id": 6,
-      "type": "timeseries",
-      "title": "Paths and nodes",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 31
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "mesh_board_paths",
-          "legendFormat": "{{sender}} paths"
-        },
-        {
-          "refId": "B",
-          "expr": "mesh_board_nodes",
-          "legendFormat": "{{sender}} nodes"
-        }
-      ]
-    },
-    {
-      "id": 7,
+      "id": 10,
       "type": "timeseries",
       "title": "Time since last report",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 31
-      },
+      "description": "",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s"
-        },
-        "overrides": []
+      "gridPos": {
+        "x": 0,
+        "y": 34,
+        "w": 12,
+        "h": 8
       },
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "refId": "A",
-          "expr": "time() - mesh_board_report_received_timestamp_seconds",
-          "legendFormat": "{{sender}}"
+          "expr": "(time() - max by (sender) (mesh_board_report_received_timestamp_seconds)) * on(sender) group_left(name) max by (sender, name) (mesh_board_info)",
+          "legendFormat": "{{name}}"
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 2,
+            "spanNulls": false,
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 900
+              },
+              {
+                "color": "red",
+                "value": 1800
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Restarts (crashes + panics, lifetime)",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 34,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "max by (sender) (mesh_board_crashes + mesh_board_panics) * on(sender) group_left(name) max by (sender, name) (mesh_board_info)",
+          "legendFormat": "{{name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "lineWidth": 2,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Paths and nodes",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 42,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "max by (sender) (mesh_board_paths) * on(sender) group_left(name) max by (sender, name) (mesh_board_info)",
+          "legendFormat": "{{name}} paths"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "B",
+          "expr": "max by (sender) (mesh_board_nodes) * on(sender) group_left(name) max by (sender, name) (mesh_board_info)",
+          "legendFormat": "{{name}} nodes"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "lineWidth": 2,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Uptime",
+      "description": "Drops to zero on every restart",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 42,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "max by (sender) (mesh_board_uptime_seconds) * on(sender) group_left(name) max by (sender, name) (mesh_board_info)",
+          "legendFormat": "{{name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dtdurations",
+          "custom": {
+            "lineWidth": 2,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
     }
   ]
 }

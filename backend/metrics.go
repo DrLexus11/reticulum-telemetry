@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -14,6 +15,7 @@ import (
 type Report struct {
 	V                 int      `json:"v"`
 	Sender            string   `json:"sender"`
+	Name              *string  `json:"name"`
 	ReceivedAt        float64  `json:"received_at"`
 	Hops              *int     `json:"hops"`
 	Gateway           *string  `json:"gateway"`
@@ -48,12 +50,17 @@ var resets = []string{"unknown", "poweron", "software", "panic", "task_wdt", "in
 
 // Metrics holds every per-board series. One registry, labelled by sender.
 type Metrics struct {
-	received, uptime, boots, crashes, panics            *prometheus.GaugeVec
+	received, uptime, boots, crashes, panics             *prometheus.GaugeVec
 	heap, largest, psram, paths, nodes, blePeers, espnow *prometheus.GaugeVec
-	relaying, relayExpected, timeCurrent, hops          *prometheus.GaugeVec
-	batteryMV, batteryPct                               *prometheus.GaugeVec
-	present, up, reset                                  *prometheus.GaugeVec
-	refused                                             prometheus.Counter
+	relaying, relayExpected, timeCurrent, hops           *prometheus.GaugeVec
+	batteryMV, batteryPct                                *prometheus.GaugeVec
+	present, up, reset                                   *prometheus.GaugeVec
+	// info carries the board's announced name as a label (1 always); queries
+	// join it by sender, so a name does not multiply every other series.
+	info    *prometheus.GaugeVec
+	refused prometheus.Counter
+	mu      sync.Mutex
+	nameOf  map[string]string
 }
 
 func gauge(reg prometheus.Registerer, name, help string, labels ...string) *prometheus.GaugeVec {
@@ -86,6 +93,8 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		present:       gauge(reg, "interface_present", "1 if the carrier is compiled in and initialised.", "interface"),
 		up:            gauge(reg, "interface_up", "1 if the carrier is up and usable now.", "interface"),
 		reset:         gauge(reg, "reset_reason", "1 for why the board's current run began, 0 for every other reason.", "reason"),
+		info:          gauge(reg, "info", "1, labelled with the board's announced name (the sender id until one is heard).", "name"),
+		nameOf:        map[string]string{},
 		refused: prometheus.NewCounter(prometheus.CounterOpts{Namespace: "mesh", Name: "reports_refused_total",
 			Help: "Messages on the telemetry topics that were not a version 1 report."}),
 	}
@@ -199,5 +208,25 @@ func (m *Metrics) Apply(payload []byte) error {
 	for _, reason := range resets {
 		m.reset.WithLabelValues(s, reason).Set(boolf(reason == r.Reset))
 	}
+	m.setName(s, r.Name)
 	return nil
+}
+
+// setName keeps exactly one info series per board. A board not yet named is
+// shown by its sender id; a name that was heard is kept if a later report
+// arrives without one (a gateway restarted before it heard the announce).
+func (m *Metrics) setName(sender string, name *string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	next := sender
+	if name != nil && *name != "" {
+		next = *name
+	} else if previous, ok := m.nameOf[sender]; ok && previous != sender {
+		next = previous
+	}
+	if previous, ok := m.nameOf[sender]; ok && previous != next {
+		m.info.DeleteLabelValues(sender, previous)
+	}
+	m.nameOf[sender] = next
+	m.info.WithLabelValues(sender, next).Set(1)
 }
