@@ -37,6 +37,19 @@ gateway and backend run as enabled systemd user services (units in
 asks once for the gateway's name, which stays in
 `~/.config/reticulum-telemetry/gateway.env`, outside the repository.
 
+## Two environments
+
+- **Dev:** the stack on the mesh host itself (`deploy/up.sh`), where the gateway
+  runs. As above.
+- **Production:** `deploy/prod/` -- the same stack under docker compose on a
+  separate host (`deploy/prod/deploy.sh` there). Its broker and Prometheus are
+  on loopback, Grafana on that host's tailnet address. The mesh host reaches it
+  through an SSH tunnel and bridges `mesh/telemetry/#` from the dev broker
+  (`deploy/prod/connect-dev.sh <ssh alias>` on the mesh host). The bridge keeps
+  a persistent session, so reports queue on the dev broker while the tunnel is
+  down. Host names, addresses and the Grafana admin password stay in host-local
+  files (`deploy/prod/.env`, `~/.config/reticulum-telemetry/`), never here.
+
 ## Running it on one host
 
 ```

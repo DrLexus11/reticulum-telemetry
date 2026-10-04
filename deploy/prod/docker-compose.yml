@@ -1,0 +1,75 @@
+# The production telemetry stack: Mosquitto, the backend, Prometheus and
+# Grafana, one compose project. The gateway does not run here -- it needs the
+# mesh, so it runs on a mesh host whose broker bridges mesh/telemetry/# to this
+# one over an SSH tunnel (README.md, "Two environments").
+#
+# Published ports: the broker and Prometheus on loopback only (reached through
+# the tunnel); Grafana on GRAFANA_BIND (.env), meant to be the tailnet address.
+name: reticulum-telemetry
+
+services:
+  mosquitto:
+    image: docker.io/library/eclipse-mosquitto:2
+    restart: unless-stopped
+    ports: ["127.0.0.1:1883:1883"]
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto:/mosquitto/data
+
+  backend:
+    build: ../../backend
+    restart: unless-stopped
+    command: ["-broker", "tcp://mosquitto:1883", "-listen", "0.0.0.0:9101"]
+    depends_on: [mosquitto]
+
+  # A fresh named volume is root-owned and Prometheus runs as nobody: hand the
+  # volume over once, rather than running Prometheus as root.
+  prometheus-init:
+    image: docker.io/library/busybox:1.36
+    command: ["chown", "-R", "65534:65534", "/prometheus"]
+    volumes:
+      - prometheus:/prometheus
+
+  prometheus:
+    image: docker.io/prom/prometheus:latest
+    restart: unless-stopped
+    ports: ["127.0.0.1:9191:9090"]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=180d
+      # Enabled ahead of T2: the backend does not remote-write yet, so a drained
+      # backlog is still recorded at scrape time. T2 writes late reports here
+      # with the time they were taken.
+      - --web.enable-remote-write-receiver
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus:/prometheus
+    depends_on:
+      backend:
+        condition: service_started
+      prometheus-init:
+        condition: service_completed_successfully
+
+  grafana:
+    image: docker.io/grafana/grafana-oss:latest
+    restart: unless-stopped
+    ports: ["${GRAFANA_BIND:-127.0.0.1}:3001:3000"]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set in .env}
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - ./grafana-datasources:/etc/grafana/provisioning/datasources:ro
+      - ../grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ../grafana/provisioning/alerting:/etc/grafana/provisioning/alerting:ro
+      - ../grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana:/var/lib/grafana
+    depends_on: [prometheus]
+
+volumes:
+  mosquitto:
+  prometheus:
+  grafana:

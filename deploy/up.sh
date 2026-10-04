@@ -13,6 +13,10 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 data="${XDG_DATA_HOME:-$HOME/.local/share}/reticulum-telemetry"
 mkdir -p "$data/mosquitto" "$data/prometheus" "$data/grafana"
+# Host-local broker additions (mosquitto.conf include_dir), e.g. the bridge to
+# production. Outside the repo: they name hosts.
+confd="${XDG_CONFIG_HOME:-$HOME/.config}/reticulum-telemetry/mosquitto.d"
+mkdir -p "$confd"
 
 # --restart=always with podman-restart.service enabled (install-services.sh)
 # brings the containers back after the host reboots.
@@ -20,6 +24,7 @@ run() { podman rm -f "$1" >/dev/null 2>&1 || true; podman run -d --restart=alway
 
 run rt-mosquitto --network host \
   -v "$here/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro,Z" \
+  -v "$confd:/mosquitto/config/conf.d:ro,Z" \
   -v "$data/mosquitto:/mosquitto/data:Z" \
   docker.io/library/eclipse-mosquitto:2
 
