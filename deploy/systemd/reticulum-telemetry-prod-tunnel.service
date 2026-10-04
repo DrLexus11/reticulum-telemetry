@@ -1,0 +1,18 @@
+# SSH tunnel from the dev host to the production host: its broker on
+# 127.0.0.1:18830 (the dev broker bridges to it) and its Prometheus on
+# 127.0.0.1:19191. PROD_SSH_HOST lives in the host-local prod-tunnel.env.
+# Installed by deploy/prod/connect-dev.sh.
+[Unit]
+Description=Reticulum telemetry: tunnel to the production host
+After=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+EnvironmentFile=%E/reticulum-telemetry/prod-tunnel.env
+ExecStart=/usr/bin/ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -L 127.0.0.1:18830:127.0.0.1:1883 -L 127.0.0.1:19191:127.0.0.1:9191 ${PROD_SSH_HOST}
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=default.target
