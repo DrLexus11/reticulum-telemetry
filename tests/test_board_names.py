@@ -44,6 +44,13 @@ class BoardNamesTests(unittest.TestCase):
             open(path, "w").write("{not json")
             self.assertIsNone(board_names.BoardNames(path).name_for("0a0b0c0d"))
 
+    def test_valid_json_that_is_not_an_object_starts_empty(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "names.json")
+            for text in ("[]", "null", "3", '"name"'):
+                open(path, "w").write(text)
+                self.assertIsNone(board_names.BoardNames(path).name_for("0a0b0c0d"))
+
 
 if __name__ == "__main__":
     unittest.main()

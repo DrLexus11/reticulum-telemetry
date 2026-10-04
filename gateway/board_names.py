@@ -40,6 +40,8 @@ class BoardNames:
             try:
                 with open(self.path) as f:
                     loaded = json.load(f)
+                if not isinstance(loaded, dict):
+                    raise ValueError("board names cache is not an object")
                 self._names = {k: v for k, v in loaded.items()
                                if isinstance(k, str) and isinstance(v, str)}
             except (OSError, ValueError):
