@@ -1260,7 +1260,7 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "time() - max by (sender_name, neighbour_name) (mesh_link_heard_timestamp_seconds)",
+          "expr": "label_join(label_join(time() - max by (sender, neighbour, sender_name, neighbour_name) (mesh_link_heard_timestamp_seconds), \"row\", \" \u00b7 \", \"sender_name\", \"sender\"), \"column\", \" \u00b7 \", \"neighbour_name\", \"neighbour\")",
           "instant": true,
           "range": false,
           "format": "table"
@@ -1270,8 +1270,8 @@
         {
           "id": "groupingToMatrix",
           "options": {
-            "columnField": "neighbour_name",
-            "rowField": "sender_name",
+            "columnField": "column",
+            "rowField": "row",
             "valueField": "Value",
             "emptyValue": "null"
           }
@@ -1280,7 +1280,7 @@
           "id": "organize",
           "options": {
             "renameByName": {
-              "sender_name\\neighbour_name": "hears \u2192"
+              "row\\column": "hears \u2192"
             }
           }
         }
@@ -1344,7 +1344,7 @@
     },
     {
       "id": 15,
-      "type": "nodegraph",
+      "type": "nodeGraph",
       "title": "Topology -- one-hop links",
       "description": "Every node a board reports hearing, and the boards themselves. An arrow runs from the board that heard to the node it heard; its figure is seconds since.",
       "datasource": {
@@ -1447,7 +1447,7 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "time() - max by (sender_name, neighbour_name, interface) (mesh_link_heard_timestamp_seconds)",
+          "expr": "time() - max by (sender, neighbour, sender_name, neighbour_name, interface) (mesh_link_heard_timestamp_seconds)",
           "instant": true,
           "range": false,
           "format": "table"
@@ -1458,7 +1458,7 @@
             "uid": "prometheus"
           },
           "refId": "B",
-          "expr": "max by (sender_name, neighbour_name, interface) (mesh_link_rssi_dbm)",
+          "expr": "max by (sender, neighbour, sender_name, neighbour_name, interface) (mesh_link_rssi_dbm)",
           "instant": true,
           "range": false,
           "format": "table"
@@ -1477,17 +1477,21 @@
             },
             "renameByName": {
               "sender_name": "Board",
+              "sender": "Board id",
               "neighbour_name": "Hears",
+              "neighbour": "Neighbour id",
               "interface": "Over",
               "Value #A": "Heard ago",
               "Value #B": "RSSI"
             },
             "indexByName": {
               "Board": 0,
-              "Hears": 1,
-              "Over": 2,
-              "Heard ago": 3,
-              "RSSI": 4
+              "Board id": 1,
+              "Hears": 2,
+              "Neighbour id": 3,
+              "Over": 4,
+              "Heard ago": 5,
+              "RSSI": 6
             }
           }
         },
@@ -1863,7 +1867,7 @@
             "uid": "prometheus"
           },
           "refId": "B",
-          "expr": "(count by (sender) (mesh_board_interface_online == 1)) * on(sender) group_left(name) max by (sender, name) (mesh_board_info)",
+          "expr": "(sum by (sender) (mesh_board_interface_online)) * on(sender) group_left(name) max by (sender, name) (mesh_board_info)",
           "instant": true,
           "range": false,
           "format": "table"

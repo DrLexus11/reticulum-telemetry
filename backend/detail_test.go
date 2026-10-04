@@ -91,13 +91,20 @@ func TestAMalformedDetailIsRefusedAndChangesNothing(t *testing.T) {
 		strings.Replace(detailFull, `"node": "11223344"`, `"node": "Ayse"`, 1),
 		strings.Replace(detailFull, `"heard_s": 60`, `"heard_s": -1`, 1),
 		"not json",
+		strings.Replace(detailFull, `{"interface": "lora", "up": true, "rx_bytes": 100, "tx_bytes": 50}`, `{}`, 1),
+		strings.Replace(detailFull, `"radio": {`, `"radio_": {`, 1),
+		strings.Replace(detailFull, `"neighbours_truncated": false`, `"truncated": false`, 1),
+		strings.Replace(detailFull, `"messages": 4, `, ``, 1),
+		strings.Replace(detailFull, `"utilisation_pct": 12`, `"utilisation_pct": 140`, 1),
+		strings.Replace(detailFull, `"rssi_dbm": -90, `, ``, 1),
+		strings.Replace(detailFull, `"hash": "a1b2c3d4"`, `"hash": "zz"`, 1),
 	} {
 		if err := m.Apply([]byte(bad)); err == nil {
 			t.Errorf("accepted %.40q", bad)
 		}
 	}
-	if got := testutil.ToFloat64(m.refused); got != 5 {
-		t.Errorf("refused: %v, want 5", got)
+	if got := testutil.ToFloat64(m.refused); got != 12 {
+		t.Errorf("refused: %v, want 12", got)
 	}
 	if got := testutil.ToFloat64(m.ifRx.WithLabelValues("0a0b0c0d", "lora")); got != 100 {
 		t.Errorf("lora rx changed to %v by a refused message", got)

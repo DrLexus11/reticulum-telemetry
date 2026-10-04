@@ -168,7 +168,11 @@ def named_table(title, columns, x, y, w, h, description=""):
 
 # A link heard within 15 minutes is live; within an hour, fading; older, stale.
 FRESHNESS = thresholds(("green", None), ("orange", 900), ("red", 3600))
-LINK_AGE = "time() - max by (sender_name, neighbour_name) (mesh_link_heard_timestamp_seconds)"
+# Names are not unique, so rows and columns carry the id beside the name: two
+# boards both called "RAD" stay two rows.
+LINK_AGE = ('label_join(label_join(time() - max by (sender, neighbour, sender_name, neighbour_name)'
+            ' (mesh_link_heard_timestamp_seconds), "row", " \u00b7 ", "sender_name", "sender"),'
+            ' "column", " \u00b7 ", "neighbour_name", "neighbour")')
 
 
 def who_hears_whom(x, y, w, h):
@@ -179,9 +183,9 @@ def who_hears_whom(x, y, w, h):
         "datasource": DS, "gridPos": {"x": x, "y": y, "w": w, "h": h},
         "targets": [target(LINK_AGE, "A", instant=True, table=True)],
         "transformations": [
-            {"id": "groupingToMatrix", "options": {"columnField": "neighbour_name", "rowField": "sender_name",
+            {"id": "groupingToMatrix", "options": {"columnField": "column", "rowField": "row",
                                                    "valueField": "Value", "emptyValue": "null"}},
-            {"id": "organize", "options": {"renameByName": {"sender_name\\neighbour_name": "hears \u2192"}}},
+            {"id": "organize", "options": {"renameByName": {"row\\column": "hears \u2192"}}},
         ],
         "fieldConfig": {"defaults": {"unit": "s", "decimals": 0, "thresholds": FRESHNESS,
                                      "color": {"mode": "thresholds"},
@@ -197,7 +201,7 @@ def topology(x, y, w, h):
     edges = ('label_join(time() - max by (sender, neighbour, interface) (mesh_link_heard_timestamp_seconds),'
              ' "id", "-", "sender", "neighbour", "interface")')
     return {
-        "id": next(_ids), "type": "nodegraph", "title": "Topology -- one-hop links",
+        "id": next(_ids), "type": "nodeGraph", "title": "Topology -- one-hop links",
         "description": "Every node a board reports hearing, and the boards themselves. An arrow runs from "
                        "the board that heard to the node it heard; its figure is seconds since.",
         "datasource": DS, "gridPos": {"x": x, "y": y, "w": w, "h": h},
@@ -217,7 +221,7 @@ def topology(x, y, w, h):
 
 
 def links_table(x, y, w, h):
-    labels = "sender_name, neighbour_name, interface"
+    labels = "sender, neighbour, sender_name, neighbour_name, interface"
     return {
         "id": next(_ids), "type": "table", "title": "Neighbour links",
         "datasource": DS, "gridPos": {"x": x, "y": y, "w": w, "h": h},
@@ -230,9 +234,11 @@ def links_table(x, y, w, h):
             {"id": "merge", "options": {}},
             {"id": "organize", "options": {
                 "excludeByName": {"Time": True},
-                "renameByName": {"sender_name": "Board", "neighbour_name": "Hears", "interface": "Over",
+                "renameByName": {"sender_name": "Board", "sender": "Board id", "neighbour_name": "Hears",
+                                 "neighbour": "Neighbour id", "interface": "Over",
                                  "Value #A": "Heard ago", "Value #B": "RSSI"},
-                "indexByName": {"Board": 0, "Hears": 1, "Over": 2, "Heard ago": 3, "RSSI": 4}}},
+                "indexByName": {"Board": 0, "Board id": 1, "Hears": 2, "Neighbour id": 3, "Over": 4,
+                                "Heard ago": 5, "RSSI": 6}}},
             {"id": "sortBy", "options": {"sort": [{"field": "Board"}]}},
         ],
         "fieldConfig": {"defaults": {"custom": {"align": "auto"}}, "overrides": [
@@ -258,7 +264,7 @@ PN_COLUMNS = [
 ]
 
 RADIO_COLUMNS = [
-    ("Carriers online", "count by (sender) (mesh_board_interface_online == 1)", "none", {}),
+    ("Carriers online", "sum by (sender) (mesh_board_interface_online)", "none", {}),
     ("Channel use", "max by (sender) (mesh_board_radio_channel_utilisation_percent)", "percent",
      {"thresholds": thresholds(("green", None), ("orange", 30), ("red", 60))}),
     ("Own airtime", "max by (sender) (mesh_board_radio_airtime_percent)", "percent", {}),

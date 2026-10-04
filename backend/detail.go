@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -56,18 +57,90 @@ type Detail struct {
 // until a name is heard), so a matrix or a graph needs no join.
 var linkLabels = []string{"sender", "neighbour", "interface", "sender_name", "neighbour_name"}
 
-var detailRequired = []string{"v", "sender", "received_at", "uptime_s", "firmware", "interfaces", "neighbours"}
+// Every field the backend reads must be present: encoding/json would
+// zero-fill a missing one, and a zero is a real value on a dashboard. The
+// nullable ones must be present too, as null.
+var (
+	detailRequired    = []string{"v", "sender", "received_at", "uptime_s", "firmware", "interfaces", "neighbours", "neighbours_truncated"}
+	detailNullable    = []string{"name", "radio", "propagation"}
+	firmwareRequired  = []string{"hash", "version"}
+	firmwareNullable  = []string{"env"}
+	interfaceRequired = []string{"interface", "up", "rx_bytes", "tx_bytes"}
+	radioRequired     = []string{"snr_db", "utilisation_pct", "airtime_pct"}
+	radioNullable     = []string{"rssi_dbm", "noise_dbm"}
+	storeRequired     = []string{"messages", "bytes", "peers", "sync_ok", "sync_failed"}
+	storeNullable     = []string{"last_sync_s"}
+	neighbourRequired = []string{"node", "interface", "heard_s"}
+	neighbourNullable = []string{"name", "rssi_dbm"}
+)
+
+var hashPattern = regexp.MustCompile(`^[0-9a-f]{8}$`)
+
+// fieldsOf checks one JSON object: `required` present and not null,
+// `nullable` present. It returns the object's fields for nested checks.
+func fieldsOf(raw json.RawMessage, where string, required, nullable []string) (map[string]json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
+		return nil, fmt.Errorf("%s is not an object", where)
+	}
+	for _, name := range required {
+		if v, ok := fields[name]; !ok || string(v) == "null" {
+			return nil, fmt.Errorf("%s: required field %q missing", where, name)
+		}
+	}
+	for _, name := range nullable {
+		if _, ok := fields[name]; !ok {
+			return nil, fmt.Errorf("%s: field %q absent (null if unknown)", where, name)
+		}
+	}
+	return fields, nil
+}
+
+func listOf(raw json.RawMessage, where string, required, nullable []string) error {
+	var items []json.RawMessage
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return fmt.Errorf("%s is not a list", where)
+	}
+	for i, item := range items {
+		if _, err := fieldsOf(item, fmt.Sprintf("%s[%d]", where, i), required, nullable); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func nonNegative(values ...float64) bool {
+	for _, v := range values {
+		if v < 0 {
+			return false
+		}
+	}
+	return true
+}
 
 func validateDetail(payload []byte) (Detail, error) {
 	var d Detail
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(payload, &fields); err != nil {
+	fields, err := fieldsOf(payload, "report", detailRequired, detailNullable)
+	if err != nil {
 		return d, err
 	}
-	for _, name := range detailRequired {
-		raw, ok := fields[name]
-		if !ok || string(raw) == "null" {
-			return d, fmt.Errorf("required field %q missing", name)
+	if _, err := fieldsOf(fields["firmware"], "firmware", firmwareRequired, firmwareNullable); err != nil {
+		return d, err
+	}
+	if err := listOf(fields["interfaces"], "interfaces", interfaceRequired, nil); err != nil {
+		return d, err
+	}
+	if err := listOf(fields["neighbours"], "neighbours", neighbourRequired, neighbourNullable); err != nil {
+		return d, err
+	}
+	if string(fields["radio"]) != "null" {
+		if _, err := fieldsOf(fields["radio"], "radio", radioRequired, radioNullable); err != nil {
+			return d, err
+		}
+	}
+	if string(fields["propagation"]) != "null" {
+		if _, err := fieldsOf(fields["propagation"], "propagation", storeRequired, storeNullable); err != nil {
+			return d, err
 		}
 	}
 	if err := json.Unmarshal(payload, &d); err != nil {
@@ -79,12 +152,34 @@ func validateDetail(payload []byte) (Detail, error) {
 	if !senderPattern.MatchString(d.Sender) {
 		return d, fmt.Errorf("sender %q is not 8 lower-case hex digits", d.Sender)
 	}
+	if !hashPattern.MatchString(d.Firmware.Hash) {
+		return d, fmt.Errorf("firmware hash %q is not 8 lower-case hex digits", d.Firmware.Hash)
+	}
+	if !nonNegative(d.ReceivedAt, d.UptimeS) {
+		return d, fmt.Errorf("negative time")
+	}
+	for _, f := range d.Interfaces {
+		if f.Interface == "" || !nonNegative(f.RxBytes, f.TxBytes) {
+			return d, fmt.Errorf("interface %q: unnamed, or a negative count", f.Interface)
+		}
+	}
+	if r := d.Radio; r != nil {
+		if r.Utilisation < 0 || r.Utilisation > 100 || r.Airtime < 0 || r.Airtime > 100 {
+			return d, fmt.Errorf("radio percentage out of range")
+		}
+	}
+	if p := d.Propagation; p != nil {
+		if !nonNegative(p.Messages, p.Bytes, p.Peers, p.SyncOK, p.SyncFailed) ||
+			(p.LastSyncS != nil && *p.LastSyncS < 0) {
+			return d, fmt.Errorf("negative propagation count")
+		}
+	}
 	for _, n := range d.Neighbours {
 		if !senderPattern.MatchString(n.Node) {
 			return d, fmt.Errorf("neighbour %q is not 8 lower-case hex digits", n.Node)
 		}
-		if n.HeardS < 0 {
-			return d, fmt.Errorf("negative neighbour age")
+		if n.Interface == "" || n.HeardS < 0 {
+			return d, fmt.Errorf("neighbour %s: no interface, or a negative age", n.Node)
 		}
 	}
 	return d, nil
