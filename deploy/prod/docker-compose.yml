@@ -22,6 +22,14 @@ services:
     command: ["-broker", "tcp://mosquitto:1883", "-listen", "0.0.0.0:9101"]
     depends_on: [mosquitto]
 
+  # A fresh named volume is root-owned and Prometheus runs as nobody: hand the
+  # volume over once, rather than running Prometheus as root.
+  prometheus-init:
+    image: docker.io/library/busybox:1.36
+    command: ["chown", "-R", "65534:65534", "/prometheus"]
+    volumes:
+      - prometheus:/prometheus
+
   prometheus:
     image: docker.io/prom/prometheus:latest
     restart: unless-stopped
@@ -34,7 +42,11 @@ services:
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus:/prometheus
-    depends_on: [backend]
+    depends_on:
+      backend:
+        condition: service_started
+      prometheus-init:
+        condition: service_completed_successfully
 
   grafana:
     image: docker.io/grafana/grafana-oss:latest
