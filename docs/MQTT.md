@@ -38,6 +38,7 @@ the shape and the units are real):
 {
   "v": 1,
   "sender": "0a0b0c0d",
+  "name": "board-1",
   "received_at": 1790000000.0,
   "hops": 2,
   "via": "LocalInterface[rns/default]",
@@ -71,6 +72,10 @@ the shape and the units are real):
 ```
 
 Built by `gateway/report.py` (`to_message`), tested in `tests/test_report.py`.
+`name` is the board's announced NomadNet name, which the gateway learns from
+the board's own announces (`gateway/board_names.py`): the sender id is the
+first four bytes of the same identity's hash. It is `null` until the gateway
+has heard one; the backend then shows the board by its sender id.
 Unknown values are `null`, never a made-up zero: a battery that is not measured
 is not empty. `v` changes only for a breaking change; new fields are added
 without one, and a consumer ignores fields it does not know.
