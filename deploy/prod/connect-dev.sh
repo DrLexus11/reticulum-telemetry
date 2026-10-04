@@ -19,7 +19,7 @@ connection prod
 address 127.0.0.1:18830
 topic mesh/telemetry/# out 1
 cleansession false
-clientid reticulum-telemetry-bridge-$(hostname)
+clientid reticulum-telemetry-bridge-$(uname -n)
 restart_timeout 10 60
 CONF
 cp "$here/systemd/reticulum-telemetry-prod-tunnel.service" "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/"
