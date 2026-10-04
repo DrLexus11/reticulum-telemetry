@@ -32,8 +32,40 @@ def clean(app_data):
     return text[:NAME_MAX] or None
 
 
+def lxmf_display_name(app_data):
+    """The display name from an lxmf.delivery announce, or None.
+
+    LXMF 0.5 and later announce a msgpack list whose first element is the name
+    (bytes, or nil); older clients announce the bare name. Only that first
+    element is read, so no msgpack library is needed.
+    """
+    if not app_data:
+        return None
+    data = bytes(app_data)
+    if 0x91 <= data[0] <= 0x9f:                     # fixarray
+        at = 1
+        if at >= len(data):
+            return None
+        tag = data[at]
+        if tag == 0xc0:                             # nil: no name set
+            return None
+        if tag in (0xc4, 0xd9):                     # bin8, str8
+            if at + 2 > len(data):
+                return None
+            length, at = data[at + 1], at + 2
+        elif 0xa0 <= tag <= 0xbf:                   # fixstr
+            length, at = tag & 0x1f, at + 1
+        else:
+            return None
+        if at + length > len(data):
+            return None
+        return clean(data[at:at + length])
+    return clean(data)
+
+
 class BoardNames:
-    def __init__(self, path=None):
+    def __init__(self, path=None, parse=clean):
+        self.parse = parse
         self.path = os.path.expanduser(path) if path else None
         self._names = {}
         if self.path and os.path.exists(self.path):
@@ -49,7 +81,7 @@ class BoardNames:
 
     def heard(self, identity_hash, app_data):
         """Record a board's announced name. True if it was new or changed."""
-        name = clean(app_data)
+        name = self.parse(app_data)
         if name is None:
             return False
         sender = sender_of(identity_hash)

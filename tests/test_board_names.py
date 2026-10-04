@@ -52,5 +52,19 @@ class BoardNamesTests(unittest.TestCase):
                 self.assertIsNone(board_names.BoardNames(path).name_for("0a0b0c0d"))
 
 
+    def test_lxmf_display_names_are_read_from_the_announce(self):
+        name = board_names.lxmf_display_name
+        self.assertEqual(name(b"\x92\xc4\x05Ayse \xc0"), "Ayse")      # [bin "Ayse ", nil]
+        self.assertEqual(name(b"\x92\xa4Ayse\x08"), "Ayse")            # [str "Ayse", 8]
+        self.assertEqual(name(b"Old client"), "Old client")             # bare name
+        self.assertIsNone(name(b"\x92\xc0\xc0"))                       # no name set
+        self.assertIsNone(name(b"\x92\xc4\x09short"))                  # cut short
+        self.assertIsNone(name(b""))
+
+    def test_a_parser_can_be_given(self):
+        names = board_names.BoardNames(parse=board_names.lxmf_display_name)
+        self.assertTrue(names.heard(bytes.fromhex("0a0b0c0d") + bytes(12), b"\x92\xc4\x04Ayse\xc0"))
+        self.assertEqual(names.name_for("0a0b0c0d"), "Ayse")
+
 if __name__ == "__main__":
     unittest.main()
