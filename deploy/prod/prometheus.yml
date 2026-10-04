@@ -1,8 +1,9 @@
 # Production Prometheus: scrapes the backend over the compose network.
 global:
   scrape_interval: 15s
-# Late reports (stored on the mesh while no gateway was reachable) are written
-# through the remote-write receiver with the time they were taken.
+# Ready for late reports (T2, not yet wired): the backend will write reports
+# stored on the mesh through the remote-write receiver, with the time they
+# were taken. Until then, every sample is the value at scrape time.
 storage:
   tsdb:
     out_of_order_time_window: 48h

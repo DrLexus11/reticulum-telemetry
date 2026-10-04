@@ -1,7 +1,7 @@
 # The production telemetry stack: Mosquitto, the backend, Prometheus and
 # Grafana, one compose project. The gateway does not run here -- it needs the
 # mesh, so it runs on a mesh host whose broker bridges mesh/telemetry/# to this
-# one over an SSH tunnel (deploy/prod/README.md).
+# one over an SSH tunnel (README.md, "Two environments").
 #
 # Published ports: the broker and Prometheus on loopback only (reached through
 # the tunnel); Grafana on GRAFANA_BIND (.env), meant to be the tailnet address.
@@ -38,6 +38,9 @@ services:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
       - --storage.tsdb.retention.time=180d
+      # Enabled ahead of T2: the backend does not remote-write yet, so a drained
+      # backlog is still recorded at scrape time. T2 writes late reports here
+      # with the time they were taken.
       - --web.enable-remote-write-receiver
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
