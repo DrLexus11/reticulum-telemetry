@@ -28,6 +28,15 @@ Python twin `tools/telemetry_codec.py`, pinned by
 `tests/fixtures/telemetry_v1.json` here are copies; a change is made there and
 copied here, and `tests/test_codec_fixture.py` catches a copy that drifted.
 
+## Surviving a reboot
+
+`deploy/install-services.sh` makes the stack come back on its own: the
+containers run with `--restart=always` under `podman-restart.service`, and the
+gateway and backend run as enabled systemd user services (units in
+`deploy/systemd/`). It needs lingering (`loginctl enable-linger $USER`) and
+asks once for the gateway's name, which stays in
+`~/.config/reticulum-telemetry/gateway.env`, outside the repository.
+
 ## Running it on one host
 
 ```

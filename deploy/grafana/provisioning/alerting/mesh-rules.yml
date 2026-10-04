@@ -1,0 +1,177 @@
+# Alert rules for the mesh boards. The host sleeps by design, so each rule
+# tells one board's problem apart from the gateway's own silence: a board is
+# 'silent' only while another board is reporting, and 'no reports' waits out
+# a normal wake-up (gateway re-announce up to 10 min, then one report cycle).
+# Shown in Grafana only; no contact point is configured on purpose.
+apiVersion: 1
+groups:
+- orgId: 1
+  name: mesh-boards
+  folder: Mesh
+  interval: 1m
+  rules:
+  - uid: mesh-board-silent
+    title: Board silent
+    condition: C
+    for: 5m
+    noDataState: OK
+    execErrState: Error
+    labels:
+      severity: warning
+    annotations:
+      summary: Board {{ $labels.sender }} has not reported for 20 min while others have
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: (time() - mesh_board_report_received_timestamp_seconds) > 1200 and on() (time() - max(mesh_board_report_received_timestamp_seconds)) < 900
+        instant: true
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+  - uid: mesh-no-reports
+    title: No reports from any board
+    condition: C
+    for: 20m
+    noDataState: Alerting
+    execErrState: Error
+    labels:
+      severity: critical
+    annotations:
+      summary: 'No board has reported for 30 min: check the gateway and its host'
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: (time() - max(mesh_board_report_received_timestamp_seconds)) > 1800
+        instant: true
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+  - uid: mesh-board-crashed
+    title: Board crashed
+    condition: C
+    for: 0s
+    noDataState: OK
+    execErrState: Error
+    labels:
+      severity: critical
+    annotations:
+      summary: Board {{ $labels.sender }} counted a crash or panic in the last hour
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: (increase(mesh_board_crashes[1h]) + increase(mesh_board_panics[1h])) > 0
+        instant: true
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+  - uid: mesh-board-restarted
+    title: Board restarted
+    condition: C
+    for: 0s
+    noDataState: OK
+    execErrState: Error
+    labels:
+      severity: warning
+    annotations:
+      summary: Board {{ $labels.sender }} restarted in the last 30 min
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: resets(mesh_board_uptime_seconds[30m]) > 0
+        instant: true
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+  - uid: mesh-board-memory-low
+    title: Board memory low
+    condition: C
+    for: 15m
+    noDataState: OK
+    execErrState: Error
+    labels:
+      severity: warning
+    annotations:
+      summary: 'Board {{ $labels.sender }}: largest free block under 20 KB for 15 min'
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: mesh_board_heap_largest_block_bytes < 20480
+        instant: true
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0

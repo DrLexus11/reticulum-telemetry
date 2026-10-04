@@ -8,13 +8,15 @@
 #   deploy/down.sh      stop and remove them; data is kept
 #
 # The gateway (gateway/telemetry_gateway.py) and the backend (backend/) run as
-# ordinary processes beside these.
+# systemd user services beside these: deploy/install-services.sh.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 data="${XDG_DATA_HOME:-$HOME/.local/share}/reticulum-telemetry"
 mkdir -p "$data/mosquitto" "$data/prometheus" "$data/grafana"
 
-run() { podman rm -f "$1" >/dev/null 2>&1 || true; podman run -d --name "$@" >/dev/null; echo "started $1"; }
+# --restart=always with podman-restart.service enabled (install-services.sh)
+# brings the containers back after the host reboots.
+run() { podman rm -f "$1" >/dev/null 2>&1 || true; podman run -d --restart=always --name "$@" >/dev/null; echo "started $1"; }
 
 run rt-mosquitto --network host \
   -v "$here/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro,Z" \
@@ -26,7 +28,8 @@ run rt-prometheus --network host --user "$(id -u):$(id -g)" --userns keep-id \
   -v "$data/prometheus:/prometheus:Z" \
   docker.io/prom/prometheus:latest \
   --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus \
-  --storage.tsdb.retention.time=30d --web.listen-address=127.0.0.1:9090
+  --storage.tsdb.retention.time=30d --web.listen-address=127.0.0.1:9090 \
+  --web.enable-remote-write-receiver
 
 run rt-grafana --network host --user "$(id -u):$(id -g)" --userns keep-id \
   -e GF_SERVER_HTTP_ADDR=127.0.0.1 -e GF_SERVER_HTTP_PORT=3000 \

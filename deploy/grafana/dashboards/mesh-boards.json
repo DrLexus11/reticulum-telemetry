@@ -13,6 +13,33 @@
   ],
   "panels": [
     {
+      "id": 100,
+      "type": "alertlist",
+      "title": "Fleet alerts -- firing and pending",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 6
+      },
+      "options": {
+        "viewMode": "list",
+        "groupMode": "default",
+        "maxItems": 20,
+        "sortOrder": 1,
+        "dashboardAlerts": false,
+        "alertName": "",
+        "alertInstanceLabelFilter": "",
+        "stateFilter": {
+          "firing": true,
+          "pending": true,
+          "noData": true,
+          "normal": false,
+          "error": true
+        }
+      }
+    },
+    {
       "id": 1,
       "type": "table",
       "title": "Boards -- one row each, latest report",
@@ -20,7 +47,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 0
+        "y": 6
       },
       "datasource": {
         "type": "prometheus",
@@ -185,7 +212,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 9
+        "y": 15
       },
       "datasource": {
         "type": "prometheus",
@@ -213,7 +240,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 9
+        "y": 15
       },
       "datasource": {
         "type": "prometheus",
@@ -241,7 +268,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 17
+        "y": 23
       },
       "datasource": {
         "type": "prometheus",
@@ -269,7 +296,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 17
+        "y": 23
       },
       "datasource": {
         "type": "prometheus",
@@ -297,7 +324,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 25
+        "y": 31
       },
       "datasource": {
         "type": "prometheus",
@@ -330,7 +357,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 25
+        "y": 31
       },
       "datasource": {
         "type": "prometheus",
