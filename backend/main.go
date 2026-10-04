@@ -1,6 +1,9 @@
-// The telemetry backend: board health reports from MQTT, as Prometheus metrics.
+// The telemetry backend: board health and detail reports from MQTT, as
+// Prometheus metrics.
 //
-// It subscribes to mesh/telemetry/# on the broker the gateways publish to and
+// It subscribes to mesh/telemetry/# on the broker the gateways publish to --
+// health reports on mesh/telemetry/<sender>, detail reports on
+// mesh/telemetry/<sender>/detail -- and
 // serves /metrics for Prometheus. Retained messages mean a restarted backend
 // has every board's latest report at once, not after each board's next one.
 package main
@@ -10,6 +13,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/prometheus/client_golang/prometheus"
@@ -24,6 +28,7 @@ func main() {
 
 	reg := prometheus.NewRegistry()
 	metrics := NewMetrics(reg)
+	details := NewDetailMetrics(reg)
 
 	opts := mqtt.NewClientOptions().AddBroker(*broker).SetClientID("telemetry-backend").
 		SetAutoReconnect(true).SetConnectRetry(true)
@@ -35,7 +40,11 @@ func main() {
 	opts.SetOnConnectHandler(func(c mqtt.Client) {
 		log.Printf("broker %s connected; subscribing to %s", *broker, *topic)
 		c.Subscribe(*topic, 1, func(_ mqtt.Client, m mqtt.Message) {
-			if err := metrics.Apply(m.Payload()); err != nil {
+			apply := metrics.Apply
+			if strings.HasSuffix(m.Topic(), "/detail") {
+				apply = details.Apply
+			}
+			if err := apply(m.Payload()); err != nil {
 				log.Printf("refused %s: %v", m.Topic(), err)
 			}
 		})

@@ -61,3 +61,60 @@ def to_message(t, received_at, hops=None, via=None, gateway=None, name=None):
         "battery_mv": t.battery_mv if t.battery_known else None,
         "battery_pct": t.battery_pct if t.battery_known else None,
     }
+
+
+DETAIL_SUFFIX = "/detail"
+
+
+def detail_topic(sender_id):
+    return topic(sender_id) + DETAIL_SUFFIX
+
+
+def detail_to_message(d, received_at, hops=None, via=None, gateway=None, name=None, name_for=None):
+    """The JSON body for one decoded detail report (telemetry_detail_codec.py).
+
+    Counters stay as the board counts them -- bytes since boot -- so a consumer
+    takes rates and reads a restart as a counter reset. Unknowns are null, not
+    the wire's sentinels. `name_for(sender_hex)` names neighbours the gateway
+    has heard announce; a neighbour it has not heard has a null name.
+    """
+    import telemetry_detail_codec as dc
+
+    def known_dbm(v):
+        return None if v == dc.RSSI_UNKNOWN else v
+
+    radio = None
+    if d["radio_known"]:
+        radio = {"rssi_dbm": known_dbm(d["rssi"]), "snr_db": d["snr_q"] / 4.0,
+                 "noise_dbm": known_dbm(d["noise"]),
+                 "utilisation_pct": d["utilisation_pct"], "airtime_pct": d["airtime_pct"]}
+    propagation = None
+    if d["propagation_known"]:
+        propagation = {"messages": d["store_messages"], "bytes": d["store_bytes"],
+                       "peers": d["pn_peers"], "sync_ok": d["sync_ok"], "sync_failed": d["sync_fail"],
+                       "last_sync_s": d["last_sync_s"]}
+    neighbours = []
+    for n in d["neighbours"]:
+        node = sender_hex(n["id"])
+        neighbours.append({"node": node, "name": name_for(node) if name_for else None,
+                           "interface": dc.IF_NAMES.get(n["kind"], "other"),
+                           "rssi_dbm": known_dbm(n["rssi"]), "heard_s": n["heard_s"]})
+    return {
+        "v": 1,
+        "sender": sender_hex(d["sender_id"]),
+        "name": name,
+        "received_at": round(received_at, 3),
+        "hops": hops,
+        "via": via,
+        "gateway": gateway,
+        "uptime_s": d["uptime_s"],
+        "firmware": {"hash": d["fw_hash"],
+                     "version": "%d.%02d" % (d["fw_version"] >> 8, d["fw_version"] & 0xFF),   # as rnodeconf prints it
+                     "env": d["env"] or None},
+        "interfaces": [{"interface": dc.IF_NAMES.get(f["kind"], "other"), "up": f["up"],
+                        "rx_bytes": f["rx_bytes"], "tx_bytes": f["tx_bytes"]} for f in d["interfaces"]],
+        "radio": radio,
+        "propagation": propagation,
+        "neighbours": neighbours,
+        "neighbours_truncated": d["neighbours_truncated"],
+    }

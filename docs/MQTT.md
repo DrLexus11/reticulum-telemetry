@@ -9,7 +9,8 @@ contract, versioned like the wire format.
 
 | Topic | Direction | QoS | Retained | Payload |
 |---|---|---|---|---|
-| `mesh/telemetry/<sender>` | gateway -> broker | 1 | yes | one decoded report, JSON (below) |
+| `mesh/telemetry/<sender>` | gateway -> broker | 1 | yes | one decoded health report, JSON (below) |
+| `mesh/telemetry/<sender>/detail` | gateway -> broker | 1 | yes | one decoded detail report, JSON (below) |
 
 - `<sender>` is the board's 32-bit sender id, as 8 lower-case hex digits
   (`TelemetryCodec.h`; the same id the position codec carries). Two boards in
@@ -79,6 +80,57 @@ has heard one; the backend then shows the board by its sender id.
 Unknown values are `null`, never a made-up zero: a battery that is not measured
 is not empty. `v` changes only for a breaking change; new fields are added
 without one, and a consumer ignores fields it does not know.
+
+### Detail payload, version 1
+
+Every 30 minutes, and with a board's first health report after it boots. The
+wire format is the firmware's `TelemetryDetailCodec.h` (0x21), pinned by
+`tests/fixtures/telemetry_detail_v1.json`. Synthetic identifiers again:
+
+```json
+{
+  "v": 1,
+  "sender": "0a0b0c0d",
+  "name": "board-1",
+  "received_at": 1790000000.0,
+  "hops": 2,
+  "via": "LocalInterface[rns/default]",
+  "gateway": "gw-1",
+  "uptime_s": 2502,
+  "firmware": {"hash": "a1b2c3d4", "version": "1.86", "env": "impr-rad01-rev1"},
+  "interfaces": [
+    {"interface": "lora", "up": true, "rx_bytes": 15982, "tx_bytes": 9120},
+    {"interface": "udp", "up": true, "rx_bytes": 2557, "tx_bytes": 1840}
+  ],
+  "radio": {"rssi_dbm": -57, "snr_db": 10.0, "noise_dbm": -110,
+            "utilisation_pct": 14, "airtime_pct": 12},
+  "propagation": {"messages": 7, "bytes": 2048, "peers": 1,
+                  "sync_ok": 0, "sync_failed": 0, "last_sync_s": null},
+  "neighbours": [
+    {"node": "11223344", "name": "board-2", "interface": "lora", "rssi_dbm": -68, "heard_s": 120}
+  ],
+  "neighbours_truncated": false
+}
+```
+
+Built by `gateway/report.py` (`detail_to_message`), tested in
+`tests/test_detail_fixture.py`.
+
+- `firmware.hash` is the first four bytes of the running image's SHA-256;
+  `version` reads as `rnodeconf` prints it.
+- Interface byte counts are **cumulative since the board booted**, as each
+  interface counts them: take a rate, and read a drop as a restart. Kinds:
+  `lora`, `ble_peer`, `espnow`, `tcp_server`, `tcp_client`, `udp`, `auto`,
+  `serial`, `halow`, `other`.
+- `radio` is `null` on a board without LoRa; `propagation` is `null` on a
+  board that runs no propagation node; `last_sync_s` is `null` until a sync
+  has completed.
+- `neighbours` are the nodes the board heard **directly** (one hop) announce,
+  most recent first, at most 48: `node` is four bytes of the identity hash --
+  a board's own sender id when the neighbour is a board. `name` is what the
+  gateway has heard that identity announce (NomadNet for boards, LXMF display
+  names for people), else `null`. `heard_s` has minute resolution and
+  saturates at 255 minutes.
 
 ## Held for the node control plane
 

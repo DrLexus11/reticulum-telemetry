@@ -93,7 +93,11 @@ def boards_table(y):
     refs = [chr(ord("B") + i) for i in range(len(COLUMNS))]
     targets = [target("max by (sender, name) (mesh_board_info)", "A", instant=True, table=True)]
     targets += [target(expr, ref, instant=True, table=True) for (_, expr, _, _), ref in zip(COLUMNS, refs)]
-    rename = {"name": "Board", "sender": "Sender id"}
+    # The running image, from the detail report: its labels become columns.
+    targets.append(target("max by (sender, hash, version, env) (mesh_board_firmware_info)", "FW",
+                          instant=True, table=True))
+    rename = {"name": "Board", "sender": "Sender id", "hash": "Firmware", "version": "Version",
+              "env": "Build"}
     overrides = []
     for (title, _, unit, extra), ref in zip(COLUMNS, refs):
         rename["Value #%s" % ref] = title
@@ -108,12 +112,13 @@ def boards_table(y):
         if "custom" in extra:
             props.append({"id": "custom.cellOptions", "value": extra["custom"]["cellOptions"]})
         overrides.append({"matcher": {"id": "byName", "options": title}, "properties": props})
-    exclude = {"Time": True, "Value #A": True}
+    exclude = {"Time": True, "Value #A": True, "Value #FW": True, "Time FW": True}
     for ref in refs:
         exclude["Time %s" % ref] = True
     order = {"Board": 0, "Sender id": 1}
     for i, (title, _, _, _) in enumerate(COLUMNS):
         order[title] = 2 + i
+    order.update({"Firmware": 2 + len(COLUMNS), "Version": 3 + len(COLUMNS), "Build": 4 + len(COLUMNS)})
     return {
         "id": next(_ids), "type": "table", "title": "Boards -- one row each, latest report",
         "datasource": DS, "gridPos": {"x": 0, "y": y, "w": 24, "h": 8},
@@ -127,6 +132,140 @@ def boards_table(y):
         "fieldConfig": {"defaults": {"custom": {"align": "auto"}}, "overrides": overrides},
         "options": {"showHeader": True, "cellHeight": "sm"},
     }
+
+
+def named_table(title, columns, x, y, w, h, description=""):
+    """A table of boards, one row each: every column's query is reduced to one
+    series per board and named, so the rows merge on (sender, name)."""
+    refs = [chr(ord("B") + i) for i in range(len(columns))]
+    targets = [target("(%s)%s" % (expr, NAMED), ref, instant=True, table=True)
+               for (_, expr, _, _), ref in zip(columns, refs)]
+    rename = {"name": "Board"}
+    exclude = {"Time": True, "sender": True}
+    overrides = []
+    for (col, _, unit, extra), ref in zip(columns, refs):
+        rename["Value #%s" % ref] = col
+        exclude["Time %s" % ref] = True
+        props = [{"id": "unit", "value": unit}]
+        if "thresholds" in extra:
+            props += [{"id": "thresholds", "value": extra["thresholds"]},
+                      {"id": "color", "value": {"mode": "thresholds"}},
+                      {"id": "custom.cellOptions", "value": {"type": "color-text"}}]
+        overrides.append({"matcher": {"id": "byName", "options": col}, "properties": props})
+    return {
+        "id": next(_ids), "type": "table", "title": title, "description": description,
+        "datasource": DS, "gridPos": {"x": x, "y": y, "w": w, "h": h},
+        "targets": targets,
+        "transformations": [
+            {"id": "merge", "options": {}},
+            {"id": "organize", "options": {"excludeByName": exclude, "renameByName": rename}},
+            {"id": "sortBy", "options": {"sort": [{"field": "Board"}]}},
+        ],
+        "fieldConfig": {"defaults": {"custom": {"align": "auto"}}, "overrides": overrides},
+        "options": {"showHeader": True, "cellHeight": "sm"},
+    }
+
+
+# A link heard within 15 minutes is live; within an hour, fading; older, stale.
+FRESHNESS = thresholds(("green", None), ("orange", 900), ("red", 3600))
+LINK_AGE = "time() - max by (sender_name, neighbour_name) (mesh_link_heard_timestamp_seconds)"
+
+
+def who_hears_whom(x, y, w, h):
+    return {
+        "id": next(_ids), "type": "table", "title": "Who hears whom -- time since heard directly",
+        "description": "Rows hear columns. From each board's detail report (every 30 min): the one-hop "
+                       "neighbours it heard announce, over any carrier. Empty: not heard directly.",
+        "datasource": DS, "gridPos": {"x": x, "y": y, "w": w, "h": h},
+        "targets": [target(LINK_AGE, "A", instant=True, table=True)],
+        "transformations": [
+            {"id": "groupingToMatrix", "options": {"columnField": "neighbour_name", "rowField": "sender_name",
+                                                   "valueField": "Value", "emptyValue": "null"}},
+            {"id": "organize", "options": {"renameByName": {"sender_name\\neighbour_name": "hears \u2192"}}},
+        ],
+        "fieldConfig": {"defaults": {"unit": "s", "decimals": 0, "thresholds": FRESHNESS,
+                                     "color": {"mode": "thresholds"},
+                                     "custom": {"align": "center", "cellOptions": {"type": "color-background"}}},
+                        "overrides": [{"matcher": {"id": "byName", "options": "hears \u2192"},
+                                       "properties": [{"id": "custom.cellOptions", "value": {"type": "auto"}},
+                                                      {"id": "custom.align", "value": "left"}]}]},
+        "options": {"showHeader": True, "cellHeight": "sm"},
+    }
+
+
+def topology(x, y, w, h):
+    edges = ('label_join(time() - max by (sender, neighbour, interface) (mesh_link_heard_timestamp_seconds),'
+             ' "id", "-", "sender", "neighbour", "interface")')
+    return {
+        "id": next(_ids), "type": "nodegraph", "title": "Topology -- one-hop links",
+        "description": "Every node a board reports hearing, and the boards themselves. An arrow runs from "
+                       "the board that heard to the node it heard; its figure is seconds since.",
+        "datasource": DS, "gridPos": {"x": x, "y": y, "w": w, "h": h},
+        "targets": [target("max by (node, name) (mesh_node_info)", "A", instant=True, table=True),
+                    target(edges, "B", instant=True, table=True)],
+        "transformations": [
+            {"id": "organize", "options": {
+                "excludeByName": {"Time": True, "Value #A": True},
+                "renameByName": {"node": "id", "name": "title", "sender": "source", "neighbour": "target",
+                                 "interface": "secondarystat", "Value #B": "mainstat"}}},
+        ],
+        "fieldConfig": {"defaults": {}, "overrides": [
+            {"matcher": {"id": "byName", "options": "mainstat"},
+             "properties": [{"id": "unit", "value": "s"}, {"id": "decimals", "value": 0}]}]},
+        "options": {"nodes": {}, "edges": {}},
+    }
+
+
+def links_table(x, y, w, h):
+    labels = "sender_name, neighbour_name, interface"
+    return {
+        "id": next(_ids), "type": "table", "title": "Neighbour links",
+        "datasource": DS, "gridPos": {"x": x, "y": y, "w": w, "h": h},
+        "targets": [
+            target("time() - max by (%s) (mesh_link_heard_timestamp_seconds)" % labels, "A",
+                   instant=True, table=True),
+            target("max by (%s) (mesh_link_rssi_dbm)" % labels, "B", instant=True, table=True),
+        ],
+        "transformations": [
+            {"id": "merge", "options": {}},
+            {"id": "organize", "options": {
+                "excludeByName": {"Time": True},
+                "renameByName": {"sender_name": "Board", "neighbour_name": "Hears", "interface": "Over",
+                                 "Value #A": "Heard ago", "Value #B": "RSSI"},
+                "indexByName": {"Board": 0, "Hears": 1, "Over": 2, "Heard ago": 3, "RSSI": 4}}},
+            {"id": "sortBy", "options": {"sort": [{"field": "Board"}]}},
+        ],
+        "fieldConfig": {"defaults": {"custom": {"align": "auto"}}, "overrides": [
+            {"matcher": {"id": "byName", "options": "Heard ago"},
+             "properties": [{"id": "unit", "value": "s"}, {"id": "thresholds", "value": FRESHNESS},
+                            {"id": "color", "value": {"mode": "thresholds"}},
+                            {"id": "custom.cellOptions", "value": {"type": "color-text"}}]},
+            {"matcher": {"id": "byName", "options": "RSSI"}, "properties": [{"id": "unit", "value": "dBm"}]}]},
+        "options": {"showHeader": True, "cellHeight": "sm"},
+    }
+
+
+PN_COLUMNS = [
+    ("Messages", "max by (sender) (mesh_board_pn_store_messages)", "none", {}),
+    ("Store", "max by (sender) (mesh_board_pn_store_bytes)", "bytes", {}),
+    ("Peers", "max by (sender) (mesh_board_pn_peers)", "none", {}),
+    ("Syncs OK", "max by (sender) (mesh_board_pn_syncs_ok_total)", "none", {}),
+    ("Syncs failed", "max by (sender) (mesh_board_pn_syncs_failed_total)", "none",
+     {"thresholds": thresholds(("green", None), ("orange", 1))}),
+    ("Last sync", "max by (sender) (mesh_board_pn_last_sync_age_seconds)"
+                  " + (time() - max by (sender) (mesh_board_detail_received_timestamp_seconds))", "s",
+     {"thresholds": thresholds(("green", None), ("orange", 3600), ("red", 21600))}),
+]
+
+RADIO_COLUMNS = [
+    ("Carriers online", "count by (sender) (mesh_board_interface_online == 1)", "none", {}),
+    ("Channel use", "max by (sender) (mesh_board_radio_channel_utilisation_percent)", "percent",
+     {"thresholds": thresholds(("green", None), ("orange", 30), ("red", 60))}),
+    ("Own airtime", "max by (sender) (mesh_board_radio_airtime_percent)", "percent", {}),
+    ("Noise floor", "max by (sender) (mesh_board_radio_noise_floor_dbm)", "dBm", {}),
+    ("Last RSSI", "max by (sender) (mesh_board_radio_rssi_dbm)", "dBm", {}),
+    ("Neighbours", "count by (sender) (mesh_link_heard_timestamp_seconds)", "none", {}),
+]
 
 
 def build():
@@ -180,9 +319,33 @@ def build():
                    "dtdurations", description="Drops to zero on every restart"),
     ]
     panels[-2]["targets"].append(target("max by (sender) (mesh_board_nodes)" + NAMED, "B", legend="{{name}} nodes"))
+
+    # The detail report (every 30 min): who hears whom, the stores, the carriers.
+    y = 50
+    panels += [
+        who_hears_whom(0, y, 12, 12),
+        topology(12, y, 12, 12),
+        links_table(0, y + 12, 24, 8),
+        named_table("Propagation nodes -- LXMF stores", PN_COLUMNS, 0, y + 20, 12, 7,
+                    description="Boards running a propagation node. Sync counts are since the board booted."),
+        named_table("Radio and carriers", RADIO_COLUMNS, 12, y + 20, 12, 7),
+        timeseries("Received, by carrier",
+                   "sum by (sender, interface) (rate(mesh_board_interface_rx_bytes_total[1h]))"
+                   " * on(sender) group_left(name) max by (sender, name) (mesh_board_info)",
+                   y + 27, 0, 12, "Bps", legend="{{name}} {{interface}}",
+                   description="Hourly average from cumulative byte counters; a restart reads as a reset"),
+        timeseries("Sent, by carrier",
+                   "sum by (sender, interface) (rate(mesh_board_interface_tx_bytes_total[1h]))"
+                   " * on(sender) group_left(name) max by (sender, name) (mesh_board_info)",
+                   y + 27, 12, 12, "Bps", legend="{{name}} {{interface}}"),
+        timeseries("LoRa channel use", "max by (sender) (mesh_board_radio_channel_utilisation_percent)" + NAMED,
+                   y + 35, 0, 12, "percent"),
+        timeseries("LoRa noise floor", "max by (sender) (mesh_board_radio_noise_floor_dbm)" + NAMED,
+                   y + 35, 12, 12, "dBm"),
+    ]
     return {
         "uid": "mesh-boards", "title": "Mesh boards", "tags": ["mesh", "telemetry"],
-        "timezone": "browser", "refresh": "30s", "schemaVersion": 39, "version": 2,
+        "timezone": "browser", "refresh": "30s", "schemaVersion": 39, "version": 3,
         "time": {"from": "now-24h", "to": "now"}, "panels": panels,
     }
 
