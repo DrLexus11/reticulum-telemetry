@@ -62,6 +62,43 @@ func TestADetailReportSetsItsSeries(t *testing.T) {
 	}
 }
 
+func TestTheSystemSectionSetsItsSeriesAndItsAbsenceRemovesThem(t *testing.T) {
+	m := NewDetailMetrics(prometheus.NewRegistry())
+	withSystem := strings.Replace(detailFull, `"neighbours_truncated": false}`, `"neighbours_truncated": false,
+ "system": {"temperature_c": 47, "lora_rx_packets": 100, "lora_tx_packets": 50, "lora_crc_errors": 3,
+  "clock_source": "signed_beacon", "clock_age_s": 1020, "ifac_rejected": null}}`, 1)
+	if err := m.Apply([]byte(withSystem)); err != nil {
+		t.Fatal(err)
+	}
+	s := "0a0b0c0d"
+	for _, c := range []struct {
+		name      string
+		got, want float64
+	}{
+		{"temperature", testutil.ToFloat64(m.temperature.WithLabelValues(s)), 47},
+		{"crc", testutil.ToFloat64(m.loraCRC.WithLabelValues(s)), 3},
+		{"clock age", testutil.ToFloat64(m.clockAge.WithLabelValues(s)), 1020},
+		{"clock source", testutil.ToFloat64(m.clockInfo.WithLabelValues(s, "signed_beacon")), 1},
+	} {
+		if c.got != c.want {
+			t.Errorf("%s: got %v, want %v", c.name, c.got, c.want)
+		}
+	}
+	if n := testutil.CollectAndCount(m.ifacRejected); n != 0 {
+		t.Errorf("ifac: %d series while unknown, want none", n)
+	}
+	if err := m.Apply([]byte(detailFull)); err != nil { // an older gateway: no system key
+		t.Fatal(err)
+	}
+	if n := testutil.CollectAndCount(m.temperature) + testutil.CollectAndCount(m.clockInfo); n != 0 {
+		t.Errorf("system series left after a report without the section: %d", n)
+	}
+	bad := strings.Replace(withSystem, `"lora_rx_packets": 100, `, ``, 1)
+	if err := m.Apply([]byte(bad)); err == nil {
+		t.Error("accepted a system section without its packet counts")
+	}
+}
+
 func TestANeighbourThatIsGoneLosesItsSeries(t *testing.T) {
 	m := NewDetailMetrics(prometheus.NewRegistry())
 	_ = m.Apply([]byte(detailFull))

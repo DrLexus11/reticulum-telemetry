@@ -93,6 +93,17 @@ def detail_to_message(d, received_at, hops=None, via=None, gateway=None, name=No
         propagation = {"messages": d["store_messages"], "bytes": d["store_bytes"],
                        "peers": d["pn_peers"], "sync_ok": d["sync_ok"], "sync_failed": d["sync_fail"],
                        "last_sync_s": d["last_sync_s"]}
+    # The clock sources OS::WallTimeSource names (microReticulum).
+    sources = {0: "unknown", 1: "persisted", 2: "ntp", 3: "authenticated_client", 4: "gnss", 5: "rtc",
+               6: "system", 7: "signed_beacon"}
+    system = None
+    if d.get("system_known"):
+        system = {"temperature_c": None if d["temperature_c"] == dc.TEMP_UNKNOWN else d["temperature_c"],
+                  "lora_rx_packets": d["lora_rx"], "lora_tx_packets": d["lora_tx"],
+                  "lora_crc_errors": d["lora_crc_errors"],
+                  "clock_source": sources.get(d["time_source"], "other") if d["time_age_s"] is not None else None,
+                  "clock_age_s": d["time_age_s"],
+                  "ifac_rejected": d["ifac_rejected"]}
     neighbours = []
     for n in d["neighbours"]:
         node = sender_hex(n["id"])
@@ -117,4 +128,5 @@ def detail_to_message(d, received_at, hops=None, via=None, gateway=None, name=No
         "propagation": propagation,
         "neighbours": neighbours,
         "neighbours_truncated": d["neighbours_truncated"],
+        "system": system,
     }

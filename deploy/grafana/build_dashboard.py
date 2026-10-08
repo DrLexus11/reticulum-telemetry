@@ -276,6 +276,14 @@ RADIO_COLUMNS = [
     ("Noise floor", "max by (sender) (mesh_board_radio_noise_floor_dbm)", "dBm", {}),
     ("Last RSSI", "max by (sender) (mesh_board_radio_rssi_dbm)", "dBm", {}),
     ("Neighbours", "count by (sender) (mesh_link_heard_timestamp_seconds)", "none", {}),
+    ("Temp", "max by (sender) (mesh_board_temperature_celsius)", "celsius",
+     {"thresholds": thresholds(("green", None), ("orange", 60), ("red", 75))}),
+    ("CRC errors /h", "max by (sender) (increase(mesh_board_lora_crc_errors_total[1h]))", "none",
+     {"thresholds": thresholds(("green", None), ("orange", 5), ("red", 30))}),
+    ("Clock age", "max by (sender) (mesh_board_clock_age_seconds)", "s",
+     {"thresholds": thresholds(("green", None), ("orange", 6 * 3600), ("red", 24 * 3600))}),
+    ("IFAC rejects /h", "max by (sender) (increase(mesh_board_ifac_rejected_total[1h]))", "none",
+     {"thresholds": thresholds(("green", None), ("red", 1))}),
 ]
 
 
@@ -339,7 +347,7 @@ def build():
         links_table(12, y + 16, 12, 12),
         named_table("Propagation nodes -- LXMF stores", PN_COLUMNS, 0, y + 28, 12, 7,
                     description="Boards running a propagation node. Sync counts are since the board booted."),
-        named_table("Radio and carriers", RADIO_COLUMNS, 12, y + 28, 12, 7),
+        named_table("Radio, carriers and system", RADIO_COLUMNS, 12, y + 28, 12, 7),
         timeseries("Received, by carrier",
                    "sum by (sender, interface) (rate(mesh_board_interface_rx_bytes_total[1h]))"
                    " * on(sender) group_left(name) max by (sender, name) (mesh_board_info)",

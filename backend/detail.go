@@ -51,6 +51,16 @@ type Detail struct {
 		HeardS    float64  `json:"heard_s"`
 	} `json:"neighbours"`
 	NeighboursTruncated bool `json:"neighbours_truncated"`
+	// Optional: gateways and firmware from before the system section omit it.
+	System *struct {
+		TemperatureC *float64 `json:"temperature_c"`
+		LoraRx       float64  `json:"lora_rx_packets"`
+		LoraTx       float64  `json:"lora_tx_packets"`
+		LoraCRC      *float64 `json:"lora_crc_errors"`
+		ClockSource  *string  `json:"clock_source"`
+		ClockAge     *float64 `json:"clock_age_s"`
+		IFAC         *float64 `json:"ifac_rejected"`
+	} `json:"system"`
 }
 
 // A link's labels: who heard whom over what, and both ends' names (the id
@@ -72,6 +82,8 @@ var (
 	storeNullable     = []string{"last_sync_s"}
 	neighbourRequired = []string{"node", "interface", "heard_s"}
 	neighbourNullable = []string{"name", "rssi_dbm"}
+	systemRequired    = []string{"lora_rx_packets", "lora_tx_packets"}
+	systemNullable    = []string{"temperature_c", "lora_crc_errors", "clock_source", "clock_age_s", "ifac_rejected"}
 )
 
 var hashPattern = regexp.MustCompile(`^[0-9a-f]{8}$`)
@@ -138,6 +150,11 @@ func validateDetail(payload []byte) (Detail, error) {
 			return d, err
 		}
 	}
+	if raw, ok := fields["system"]; ok && string(raw) != "null" {
+		if _, err := fieldsOf(raw, "system", systemRequired, systemNullable); err != nil {
+			return d, err
+		}
+	}
 	if string(fields["propagation"]) != "null" {
 		if _, err := fieldsOf(fields["propagation"], "propagation", storeRequired, storeNullable); err != nil {
 			return d, err
@@ -174,6 +191,12 @@ func validateDetail(payload []byte) (Detail, error) {
 			return d, fmt.Errorf("negative propagation count")
 		}
 	}
+	if y := d.System; y != nil {
+		if !nonNegative(y.LoraRx, y.LoraTx) || (y.LoraCRC != nil && *y.LoraCRC < 0) ||
+			(y.ClockAge != nil && *y.ClockAge < 0) || (y.IFAC != nil && *y.IFAC < 0) {
+			return d, fmt.Errorf("negative system count")
+		}
+	}
 	for _, n := range d.Neighbours {
 		if !senderPattern.MatchString(n.Node) {
 			return d, fmt.Errorf("neighbour %q is not 8 lower-case hex digits", n.Node)
@@ -194,6 +217,8 @@ type DetailMetrics struct {
 	rssi, snr, noise, utilisation, airtime            *prometheus.GaugeVec
 	pnMessages, pnBytes, pnPeers, pnOK, pnFail, pnAge *prometheus.GaugeVec
 	truncated                                         *prometheus.GaugeVec
+	temperature, loraRx, loraTx, loraCRC, clockAge    *prometheus.GaugeVec
+	clockInfo, ifacRejected                           *prometheus.GaugeVec
 	linkHeard, linkRSSI                               *prometheus.GaugeVec
 	// nodeInfo names every node the mesh reports, boards and the phones they
 	// hear alike: mesh_node_info{node, name}. One series per node.
@@ -215,23 +240,30 @@ func nodeGauge(reg prometheus.Registerer, subsystem, name, help string, labels .
 
 func NewDetailMetrics(reg prometheus.Registerer) *DetailMetrics {
 	return &DetailMetrics{
-		received:    gauge(reg, "detail_received_timestamp_seconds", "When the gateway received this board's latest detail report."),
-		firmware:    gauge(reg, "firmware_info", "1, labelled with the running image: hash (first 4 bytes), version, build environment.", "hash", "version", "env"),
-		ifUp:        gauge(reg, "interface_online", "1 if the interface reports itself online (detail report kinds).", "interface"),
-		ifRx:        gauge(reg, "interface_rx_bytes_total", "Bytes received on the interface since boot, as it counts them; take rate().", "interface"),
-		ifTx:        gauge(reg, "interface_tx_bytes_total", "Bytes sent on the interface since boot, as it counts them; take rate().", "interface"),
-		rssi:        gauge(reg, "radio_rssi_dbm", "LoRa RSSI of the last packet received."),
-		snr:         gauge(reg, "radio_snr_db", "LoRa SNR of the last packet received."),
-		noise:       gauge(reg, "radio_noise_floor_dbm", "LoRa noise floor."),
-		utilisation: gauge(reg, "radio_channel_utilisation_percent", "LoRa channel utilisation, as the board measures it."),
-		airtime:     gauge(reg, "radio_airtime_percent", "LoRa airtime this board used."),
-		pnMessages:  gauge(reg, "pn_store_messages", "Messages in the board's LXMF propagation store."),
-		pnBytes:     gauge(reg, "pn_store_bytes", "Size of that store (whole KB on the wire)."),
-		pnPeers:     gauge(reg, "pn_peers", "Propagation peers the board syncs with."),
-		pnOK:        gauge(reg, "pn_syncs_ok_total", "Peer syncs that completed since boot."),
-		pnFail:      gauge(reg, "pn_syncs_failed_total", "Peer syncs that failed since boot."),
-		pnAge:       gauge(reg, "pn_last_sync_age_seconds", "Seconds since the last completed sync, at report time; absent if none yet."),
-		truncated:   gauge(reg, "neighbours_truncated", "1 if the board heard more neighbours than its report carries."),
+		received:     gauge(reg, "detail_received_timestamp_seconds", "When the gateway received this board's latest detail report."),
+		firmware:     gauge(reg, "firmware_info", "1, labelled with the running image: hash (first 4 bytes), version, build environment.", "hash", "version", "env"),
+		ifUp:         gauge(reg, "interface_online", "1 if the interface reports itself online (detail report kinds).", "interface"),
+		ifRx:         gauge(reg, "interface_rx_bytes_total", "Bytes received on the interface since boot, as it counts them; take rate().", "interface"),
+		ifTx:         gauge(reg, "interface_tx_bytes_total", "Bytes sent on the interface since boot, as it counts them; take rate().", "interface"),
+		rssi:         gauge(reg, "radio_rssi_dbm", "LoRa RSSI of the last packet received."),
+		snr:          gauge(reg, "radio_snr_db", "LoRa SNR of the last packet received."),
+		noise:        gauge(reg, "radio_noise_floor_dbm", "LoRa noise floor."),
+		utilisation:  gauge(reg, "radio_channel_utilisation_percent", "LoRa channel utilisation, as the board measures it."),
+		airtime:      gauge(reg, "radio_airtime_percent", "LoRa airtime this board used."),
+		pnMessages:   gauge(reg, "pn_store_messages", "Messages in the board's LXMF propagation store."),
+		pnBytes:      gauge(reg, "pn_store_bytes", "Size of that store (whole KB on the wire)."),
+		pnPeers:      gauge(reg, "pn_peers", "Propagation peers the board syncs with."),
+		pnOK:         gauge(reg, "pn_syncs_ok_total", "Peer syncs that completed since boot."),
+		pnFail:       gauge(reg, "pn_syncs_failed_total", "Peer syncs that failed since boot."),
+		pnAge:        gauge(reg, "pn_last_sync_age_seconds", "Seconds since the last completed sync, at report time; absent if none yet."),
+		truncated:    gauge(reg, "neighbours_truncated", "1 if the board heard more neighbours than its report carries."),
+		temperature:  gauge(reg, "temperature_celsius", "The chip's temperature."),
+		loraRx:       gauge(reg, "lora_rx_packets_total", "LoRa packets received since boot; take rate()."),
+		loraTx:       gauge(reg, "lora_tx_packets_total", "LoRa packets sent since boot; take rate()."),
+		loraCRC:      gauge(reg, "lora_crc_errors_total", "LoRa packets dropped on a CRC error since boot: with the noise floor, the sign of interference."),
+		clockAge:     gauge(reg, "clock_age_seconds", "Seconds since the board's clock was last adopted, at report time; absent if never."),
+		clockInfo:    gauge(reg, "clock_info", "1, labelled with where the board's clock came from.", "source"),
+		ifacRejected: gauge(reg, "ifac_rejected_total", "Packets refused for a wrong network key since boot: foreign or misconfigured radios."),
 		linkHeard: nodeGauge(reg, "link", "heard_timestamp_seconds",
 			"When `sender` last heard `neighbour` directly, over `interface`: who sees whom.", linkLabels...),
 		linkRSSI: nodeGauge(reg, "link", "rssi_dbm",
@@ -331,6 +363,22 @@ func (m *DetailMetrics) Apply(payload []byte) error {
 		}
 	}
 	m.truncated.WithLabelValues(s).Set(boolf(d.NeighboursTruncated))
+	m.clockInfo.DeletePartialMatch(prometheus.Labels{"sender": s})
+	if y := d.System; y != nil {
+		setOrDelete(m.temperature, y.TemperatureC)
+		setOrDelete(m.loraRx, &y.LoraRx)
+		setOrDelete(m.loraTx, &y.LoraTx)
+		setOrDelete(m.loraCRC, y.LoraCRC)
+		setOrDelete(m.clockAge, y.ClockAge)
+		setOrDelete(m.ifacRejected, y.IFAC)
+		if y.ClockSource != nil {
+			m.clockInfo.WithLabelValues(s, *y.ClockSource).Set(1)
+		}
+	} else {
+		for _, g := range []*prometheus.GaugeVec{m.temperature, m.loraRx, m.loraTx, m.loraCRC, m.clockAge, m.ifacRejected} {
+			g.DeleteLabelValues(s)
+		}
+	}
 
 	if d.Name != nil && *d.Name != "" {
 		m.nameNode(s, *d.Name)
