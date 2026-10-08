@@ -237,7 +237,10 @@ def board_map(x, y, w, h):
         "targets": [
             target("max by (sender, source) (mesh_board_latitude_degrees)", "A", instant=True, table=True),
             target("max by (sender) (mesh_board_longitude_degrees)", "B", instant=True, table=True),
-            target("max by (sender, name) (mesh_board_info)", "C", instant=True, table=True),
+            # The board's name; a board placed but not yet reporting is labelled by its id.
+            target("max by (sender, name) (mesh_board_info) or (label_replace(max by (sender) "
+                   "(mesh_board_latitude_degrees), \"name\", \"$1\", \"sender\", \"(.*)\") "
+                   "unless on(sender) max by (sender) (mesh_board_info))", "C", instant=True, table=True),
             target("max by (sender) (mesh_board_probe_success)", "D", instant=True, table=True),
         ],
         "transformations": [

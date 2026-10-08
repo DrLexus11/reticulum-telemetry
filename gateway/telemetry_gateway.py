@@ -52,6 +52,7 @@ class Gateway:
         self.rns = RNS
         self.reticulum = RNS.Reticulum(rnsconfig)
         self.identity = self._identity(identity_path)
+        self.identity_path = identity_path
         self.destination = RNS.Destination(self.identity, RNS.Destination.IN,
                                            RNS.Destination.SINGLE, APP_NAME, *ASPECTS)
         self.destination.set_packet_callback(self._packet)
@@ -221,7 +222,11 @@ class Gateway:
     def _positions_forever(self):
         """Publish each board's configured position (positions.py), at start and
         whenever the file changes."""
-        published = None
+        # What this gateway published before, kept on disk: a board taken out of
+        # the file while the gateway was stopped is still cleared at start.
+        state = os.path.join(os.path.dirname(os.path.expanduser(self.identity_path)) or ".",
+                             "positions_published.json")
+        published = {sender: None for sender in positions.load_published(state)}
         while True:
             current = positions.load(self.positions_path)
             if current != published:
@@ -235,6 +240,7 @@ class Gateway:
                     self.mqtt.publish(report.TOPIC_PREFIX + sender + "/position", b"", qos=1, retain=True)
                 if current:
                     print("[gateway] %d board position(s) published" % len(current), flush=True)
+                positions.save_published(state, list(current))
                 published = current
             time.sleep(60)
 

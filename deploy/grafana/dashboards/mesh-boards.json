@@ -1438,7 +1438,7 @@
             "uid": "prometheus"
           },
           "refId": "C",
-          "expr": "max by (sender, name) (mesh_board_info)",
+          "expr": "max by (sender, name) (mesh_board_info) or (label_replace(max by (sender) (mesh_board_latitude_degrees), \"name\", \"$1\", \"sender\", \"(.*)\") unless on(sender) max by (sender) (mesh_board_info))",
           "instant": true,
           "range": false,
           "format": "table"

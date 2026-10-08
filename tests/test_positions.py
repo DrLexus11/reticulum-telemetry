@@ -41,5 +41,16 @@ class Positions(unittest.TestCase):
         self.assertEqual((m["source"], m["lat"], m["lon"], m["name"]), ("configured", 41.0, 29.0, "RAD-1"))
 
 
+    def test_what_was_published_survives_a_restart(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "published.json")
+            self.assertEqual(positions.load_published(path), [])
+            positions.save_published(path, ["11223344", "0a0b0c0d"])
+            self.assertEqual(positions.load_published(path), ["0a0b0c0d", "11223344"])
+            with open(path, "w") as f:
+                f.write('["0a0b0c0d", "RAD", 5]')
+            self.assertEqual(positions.load_published(path), ["0a0b0c0d"])
+
+
 if __name__ == "__main__":
     unittest.main()

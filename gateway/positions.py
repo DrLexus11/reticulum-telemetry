@@ -18,6 +18,7 @@ Pure apart from reading the file.
 import json
 import os
 import re
+import tempfile
 
 SENDER = re.compile(r"^[0-9a-f]{8}$")
 
@@ -52,3 +53,23 @@ def load(path):
 def message(sender, position, at, name=None, source="configured"):
     return {"v": 1, "sender": sender, "name": name, "lat": position["lat"], "lon": position["lon"],
             "source": source, "at": round(at, 3)}
+
+
+def load_published(path):
+    """The senders a previous run published, so removals can be cleared."""
+    try:
+        with open(os.path.expanduser(path)) as f:
+            raw = json.load(f)
+    except (OSError, ValueError):
+        return []
+    return [s for s in raw if isinstance(s, str) and SENDER.match(s)] if isinstance(raw, list) else []
+
+
+def save_published(path, senders):
+    path = os.path.expanduser(path)
+    folder = os.path.dirname(path) or "."
+    os.makedirs(folder, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=folder, prefix=".positions_published.")
+    with os.fdopen(fd, "w") as f:
+        json.dump(sorted(senders), f)
+    os.replace(tmp, path)
