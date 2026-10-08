@@ -91,14 +91,18 @@ class ProbeBook:
             return [(k, dict(v)) for k, v in self.targets.items()]
 
     def result(self, sender_hex, at, delivered, rtt_s=None, hops=None, via=None, name=None, gateway=None):
-        """Count one probe and return its message."""
+        """Count one probe; return (heal, message). `heal` -- time to drop the
+        board's paths -- is decided under the same lock as the count, so two
+        overlapping results cannot both decide it."""
         with self._lock:
             self.sent[sender_hex] = self.sent.get(sender_hex, 0) + 1
             if delivered:
                 self.delivered[sender_hex] = self.delivered.get(sender_hex, 0) + 1
             sent, received = self.sent[sender_hex], self.delivered.get(sender_hex, 0)
-            self.lost_in_a_row[sender_hex] = 0 if delivered else self.lost_in_a_row.get(sender_hex, 0) + 1
-        return {
+            lost = 0 if delivered else self.lost_in_a_row.get(sender_hex, 0) + 1
+            self.lost_in_a_row[sender_hex] = lost
+            heal = lost > 0 and lost % HEAL_AFTER == 0
+        return heal, {
             "v": 1,
             "sender": sender_hex,
             "name": name,
@@ -111,12 +115,6 @@ class ProbeBook:
             "sent_total": sent,
             "delivered_total": received,
         }
-
-    def should_heal(self, sender_hex):
-        """True when the latest losses in a row make it time to drop the path."""
-        with self._lock:
-            lost = self.lost_in_a_row.get(sender_hex, 0)
-        return lost > 0 and lost % HEAL_AFTER == 0
 
     def _save(self):
         if not self.path:
