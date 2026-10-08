@@ -50,26 +50,37 @@ class Probes(unittest.TestCase):
 
     def test_messages_count_and_say_what_happened(self):
         book = probes.ProbeBook()
-        m = book.result("0a0b0c0d", 100.0, True, rtt_s=2.41234, hops=2, via="udp", name="RAD-1", gateway="gw")
+        _, m = book.result("0a0b0c0d", 100.0, True, rtt_s=2.41234, hops=2, via="udp", name="RAD-1", gateway="gw")
         json.dumps(m)
         self.assertEqual((m["sent_total"], m["delivered_total"], m["rtt_s"]), (1, 1, 2.4123))
-        lost = book.result("0a0b0c0d", 400.0, False, rtt_s=5.0, hops=None)
+        _, lost = book.result("0a0b0c0d", 400.0, False, rtt_s=5.0, hops=None)
         self.assertEqual((lost["sent_total"], lost["delivered_total"]), (2, 1))
         self.assertIsNone(lost["rtt_s"])      # no round-trip time without a proof
         self.assertFalse(lost["delivered"])
 
 
+    def test_a_path_is_healed_every_few_losses_in_a_row(self):
+        book = probes.ProbeBook()
+        results = []
+        for delivered in (False, False, False, False, True, False):
+            heal, _ = book.result("0a0b0c0d", 0.0, delivered)
+            results.append(heal)
+        self.assertEqual(results, [False, True, False, True, False, False])
+
     def test_the_counts_hold_under_concurrent_results(self):
         import threading
         book = probes.ProbeBook()
-        workers = [threading.Thread(target=lambda: [book.result("0a0b0c0d", 0.0, i % 2 == 0) for i in range(500)])
+        heals = []
+        workers = [threading.Thread(target=lambda: [heals.append(book.result("0a0b0c0d", 0.0, False)[0])
+                                                    for i in range(500)])
                    for _ in range(8)]
         for w in workers:
             w.start()
         for w in workers:
             w.join()
-        last = book.result("0a0b0c0d", 0.0, True)
-        self.assertEqual((last["sent_total"], last["delivered_total"]), (4001, 2001))
+        _, last = book.result("0a0b0c0d", 0.0, True)
+        self.assertEqual((last["sent_total"], last["delivered_total"]), (4001, 1))
+        self.assertEqual(sum(heals), 4000 // probes.HEAL_AFTER)   # each heal decided exactly once
 
 
 if __name__ == "__main__":
