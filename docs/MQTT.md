@@ -12,6 +12,7 @@ contract, versioned like the wire format.
 | `mesh/telemetry/<sender>` | gateway -> broker | 1 | yes | one decoded health report, JSON (below) |
 | `mesh/telemetry/<sender>/detail` | gateway -> broker | 1 | yes | one decoded detail report, JSON (below) |
 | `mesh/telemetry/<sender>/backfill` | gateway -> broker | 1 | **no** | one report the board kept while no gateway was in reach (T2, below) |
+| `mesh/telemetry/<sender>/probe` | gateway -> broker | 1 | yes | the gateway's latest reachability probe of the board (below) |
 
 - `<sender>` is the board's 32-bit sender id, as 8 lower-case hex digits
   (`TelemetryCodec.h`; the same id the position codec carries). Two boards in
@@ -162,6 +163,26 @@ remote-write receiver, under the live metric names with an added
 a change. Prometheus accepts samples up to 48 h old (`out_of_order_time_window`):
 a longer partition loses its oldest reports. `tools/send_test_batch.py` sends
 a test batch the way a board would.
+
+### Probe, version 1
+
+Every 5 minutes the gateway sends each board a small packet to its
+`rnstransport.probe` destination -- every board answers probes with a proof --
+and publishes what happened (`gateway/probes.py`). The other topics are the
+board's own word; this one measures whether traffic gets through to it.
+
+```json
+{"v": 1, "sender": "0a0b0c0d", "name": "board-1", "at": 1790000000.0,
+ "delivered": true, "rtt_s": 0.76, "hops": 2, "via": "udp", "gateway": "gw-1",
+ "sent_total": 37, "delivered_total": 35}
+```
+
+`rtt_s` is null when no proof came back within a minute. `via` is the kind of
+interface the path leaves the gateway's host by, asked of its shared
+Reticulum instance. The counts are cumulative since the gateway started.
+Boards become targets when the gateway hears their NomadNet node announce
+(hourly); they are kept on disk, with the identity's public key, so a
+restarted gateway probes at once.
 
 ## Held for the node control plane
 
