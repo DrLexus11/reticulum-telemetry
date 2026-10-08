@@ -2027,7 +2027,7 @@
             "uid": "prometheus"
           },
           "refId": "J",
-          "expr": "(max by (sender) (mesh_board_clock_age_seconds)) * on(sender) group_left(name) max by (sender, name) (mesh_board_info)",
+          "expr": "(max by (sender) (mesh_board_clock_age_seconds) + (time() - max by (sender) (mesh_board_detail_received_timestamp_seconds))) * on(sender) group_left(name) max by (sender, name) (mesh_board_info)",
           "instant": true,
           "range": false,
           "format": "table"

@@ -93,6 +93,20 @@ func TestTheSystemSectionSetsItsSeriesAndItsAbsenceRemovesThem(t *testing.T) {
 	if n := testutil.CollectAndCount(m.temperature) + testutil.CollectAndCount(m.clockInfo); n != 0 {
 		t.Errorf("system series left after a report without the section: %d", n)
 	}
+	// The backfill path carries the clock's source as well as its age.
+	var samples []sample
+	if d, err := validateDetail([]byte(withSystem)); err == nil {
+		samples = detailSamples(d, "exact")
+	}
+	found := false
+	for _, smp := range samples {
+		if smp.labels["__name__"] == "mesh_board_clock_info" && smp.labels["source"] == "signed_beacon" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("backfill has no clock_info sample")
+	}
 	bad := strings.Replace(withSystem, `"lora_rx_packets": 100, `, ``, 1)
 	if err := m.Apply([]byte(bad)); err == nil {
 		t.Error("accepted a system section without its packet counts")

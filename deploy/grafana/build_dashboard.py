@@ -280,7 +280,8 @@ RADIO_COLUMNS = [
      {"thresholds": thresholds(("green", None), ("orange", 60), ("red", 75))}),
     ("CRC errors /h", "max by (sender) (increase(mesh_board_lora_crc_errors_total[1h]))", "none",
      {"thresholds": thresholds(("green", None), ("orange", 5), ("red", 30))}),
-    ("Clock age", "max by (sender) (mesh_board_clock_age_seconds)", "s",
+    ("Clock age", "max by (sender) (mesh_board_clock_age_seconds)"
+                  " + (time() - max by (sender) (mesh_board_detail_received_timestamp_seconds))", "s",
      {"thresholds": thresholds(("green", None), ("orange", 6 * 3600), ("red", 24 * 3600))}),
     ("IFAC rejects /h", "max by (sender) (increase(mesh_board_ifac_rejected_total[1h]))", "none",
      {"thresholds": thresholds(("green", None), ("red", 1))}),

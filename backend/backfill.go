@@ -191,6 +191,9 @@ func detailSamples(d Detail, quality string) []sample {
 				out = append(out, boardSample(opt.name, s, quality, *opt.v, ms))
 			}
 		}
+		if y.ClockSource != nil {
+			out = append(out, boardSample("clock_info", s, quality, 1, ms, "source", *y.ClockSource))
+		}
 	}
 	senderName := s
 	if d.Name != nil && *d.Name != "" {
