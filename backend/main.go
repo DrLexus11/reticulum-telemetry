@@ -33,9 +33,16 @@ func main() {
 	metrics := NewMetrics(reg)
 	details := NewDetailMetrics(reg)
 	backfill := NewBackfill(reg, *remoteWrite)
+	boardPositions := NewPositionMetrics(reg)
 	probes := NewProbeMetrics(reg)
 
 	handle := func(_ mqtt.Client, m mqtt.Message) {
+		if strings.HasSuffix(m.Topic(), "/position") {
+			if err := boardPositions.Apply(m.Topic(), m.Payload()); err != nil {
+				log.Printf("refused %s: %v", m.Topic(), err)
+			}
+			return
+		}
 		apply := metrics.Apply
 		switch {
 		case strings.HasSuffix(m.Topic(), "/detail"):

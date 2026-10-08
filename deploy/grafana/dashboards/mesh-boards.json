@@ -1330,7 +1330,7 @@
       "gridPos": {
         "x": 0,
         "y": 50,
-        "w": 24,
+        "w": 16,
         "h": 16
       },
       "targets": [
@@ -1396,6 +1396,179 @@
     },
     {
       "id": 15,
+      "type": "geomap",
+      "title": "Boards on the map",
+      "description": "Positions are configured (no board has GNSS yet; Rev 3 adds it); the source label says which. A marker is green when the gateway's last probe got through, red when it did not, grey when the board is not probed. Map tiles need an internet connection.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 50,
+        "w": 8,
+        "h": 16
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "max by (sender, source) (mesh_board_latitude_degrees)",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "B",
+          "expr": "max by (sender) (mesh_board_longitude_degrees)",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "C",
+          "expr": "max by (sender, name) (mesh_board_info) or (label_replace(max by (sender) (mesh_board_latitude_degrees), \"name\", \"$1\", \"sender\", \"(.*)\") unless on(sender) max by (sender) (mesh_board_info))",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "D",
+          "expr": "max by (sender) (mesh_board_probe_success)",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "sender",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Time A": true,
+              "Time B": true,
+              "Time C": true,
+              "Time D": true,
+              "Value #C": true
+            },
+            "renameByName": {
+              "Value #A": "lat",
+              "Value #B": "lon",
+              "Value #D": "reachable",
+              "name": "Board",
+              "source": "Position"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "view": {
+          "id": "fit",
+          "lat": 0,
+          "lon": 0,
+          "zoom": 16,
+          "allLayers": true
+        },
+        "controls": {
+          "showZoom": true,
+          "mouseWheelZoom": true,
+          "showAttribution": true
+        },
+        "basemap": {
+          "type": "osm-standard",
+          "name": "OpenStreetMap"
+        },
+        "tooltip": {
+          "mode": "details"
+        },
+        "layers": [
+          {
+            "type": "markers",
+            "name": "Boards",
+            "tooltip": true,
+            "location": {
+              "mode": "coords",
+              "latitude": "lat",
+              "longitude": "lon"
+            },
+            "config": {
+              "showLegend": false,
+              "style": {
+                "size": {
+                  "fixed": 20
+                },
+                "opacity": 1,
+                "color": {
+                  "field": "reachable",
+                  "fixed": "#808080"
+                },
+                "symbol": {
+                  "mode": "fixed",
+                  "fixed": "img/icons/marker/circle.svg"
+                },
+                "text": {
+                  "mode": "field",
+                  "field": "Board",
+                  "fixed": ""
+                },
+                "textConfig": {
+                  "fontSize": 14,
+                  "offsetY": -24,
+                  "textAlign": "center",
+                  "textBaseline": "middle"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": 16,
       "type": "table",
       "title": "Who hears whom -- time since heard directly",
       "description": "Rows hear columns. From each board's detail report (every 30 min): the one-hop neighbours it heard announce, over any carrier. Empty: not heard directly.",
@@ -1499,7 +1672,7 @@
       }
     },
     {
-      "id": 16,
+      "id": 17,
       "type": "table",
       "title": "Neighbour links",
       "datasource": {
@@ -1649,7 +1822,7 @@
       }
     },
     {
-      "id": 17,
+      "id": 18,
       "type": "table",
       "title": "Propagation nodes -- LXMF stores",
       "description": "Boards running a propagation node. Sync counts are since the board booted.",
@@ -1918,7 +2091,7 @@
       }
     },
     {
-      "id": 18,
+      "id": 19,
       "type": "table",
       "title": "Radio, carriers and system",
       "description": "",
@@ -2383,7 +2556,7 @@
       }
     },
     {
-      "id": 19,
+      "id": 20,
       "type": "timeseries",
       "title": "Received, by carrier",
       "description": "Hourly average from cumulative byte counters; a restart reads as a reset",
@@ -2432,7 +2605,7 @@
       }
     },
     {
-      "id": 20,
+      "id": 21,
       "type": "timeseries",
       "title": "Sent, by carrier",
       "description": "",
@@ -2481,7 +2654,7 @@
       }
     },
     {
-      "id": 21,
+      "id": 22,
       "type": "timeseries",
       "title": "Probe round-trip time",
       "description": "The gateway's probe of each board, every 5 minutes: measured, not inferred",
@@ -2530,7 +2703,7 @@
       }
     },
     {
-      "id": 22,
+      "id": 23,
       "type": "timeseries",
       "title": "Probe loss, last hour",
       "description": "",
@@ -2599,7 +2772,7 @@
       }
     },
     {
-      "id": 23,
+      "id": 24,
       "type": "timeseries",
       "title": "LoRa channel use",
       "description": "",
@@ -2648,7 +2821,7 @@
       }
     },
     {
-      "id": 24,
+      "id": 25,
       "type": "timeseries",
       "title": "LoRa noise floor",
       "description": "",

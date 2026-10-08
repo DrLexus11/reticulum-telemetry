@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import backfill  # noqa: E402
 import board_names  # noqa: E402
 import lxmf_inbox  # noqa: E402
+import positions  # noqa: E402
 import probes  # noqa: E402
 import spool  # noqa: E402
 import report  # noqa: E402
@@ -43,13 +44,15 @@ ANNOUNCE_INTERVAL_S = 600
 
 
 class Gateway:
-    def __init__(self, identity_path, rnsconfig, broker, port, announce_interval, name, propagation_nodes=()):
+    def __init__(self, identity_path, rnsconfig, broker, port, announce_interval, name, propagation_nodes=(),
+                 positions_path="~/.config/reticulum-telemetry/board_positions.json"):
         import RNS
         import paho.mqtt.client as mqtt
 
         self.rns = RNS
         self.reticulum = RNS.Reticulum(rnsconfig)
         self.identity = self._identity(identity_path)
+        self.identity_path = identity_path
         self.destination = RNS.Destination(self.identity, RNS.Destination.IN,
                                            RNS.Destination.SINGLE, APP_NAME, *ASPECTS)
         self.destination.set_packet_callback(self._packet)
@@ -120,6 +123,8 @@ class Gateway:
                                       always=propagation_nodes)
         threading.Thread(target=self.inbox.sync_forever, daemon=True, name="lxmf-inbox").start()
         threading.Thread(target=self._probe_forever, daemon=True, name="probes").start()
+        self.positions_path = positions_path
+        threading.Thread(target=self._positions_forever, daemon=True, name="positions").start()
 
     def _identity(self, path):
         path = os.path.expanduser(path)
@@ -214,6 +219,31 @@ class Gateway:
             except Exception as error:                      # noqa: BLE001
                 print("[spool] drain failed: %s" % error, flush=True)
 
+    def _positions_forever(self):
+        """Publish each board's configured position (positions.py), at start and
+        whenever the file changes."""
+        # What this gateway published before, kept on disk: a board taken out of
+        # the file while the gateway was stopped is still cleared at start.
+        state = os.path.join(os.path.dirname(os.path.expanduser(self.identity_path)) or ".",
+                             "positions_published.json")
+        published = {sender: None for sender in positions.load_published(state)}
+        while True:
+            current = positions.load(self.positions_path)
+            if current != published:
+                now = time.time()
+                for sender, position in current.items():
+                    message = positions.message(sender, position, now, name=self.name_for(sender))
+                    self.mqtt.publish(report.TOPIC_PREFIX + sender + "/position", json.dumps(message),
+                                      qos=1, retain=True)
+                for sender in set(published or {}) - set(current):
+                    # Taken out of the file: clear the retained position.
+                    self.mqtt.publish(report.TOPIC_PREFIX + sender + "/position", b"", qos=1, retain=True)
+                if current:
+                    print("[gateway] %d board position(s) published" % len(current), flush=True)
+                positions.save_published(state, list(current))
+                published = current
+            time.sleep(60)
+
     def _probe_forever(self):
         time.sleep(60)   # let paths form after start
         next_pass = time.time()
@@ -307,6 +337,8 @@ def main():
     parser.add_argument("--port", type=int, default=1883)
     parser.add_argument("--announce-interval", type=int, default=ANNOUNCE_INTERVAL_S)
     parser.add_argument("--name", default="gateway", help="announced with the destination")
+    parser.add_argument("--positions", default="~/.config/reticulum-telemetry/board_positions.json",
+                        help="host-local file of configured board positions (gateway/positions.py)")
     parser.add_argument("--propagation-node", action="append", default=[], metavar="HASH",
                         help="an LXMF propagation node to collect batches from even unheard (repeatable); "
                              "nodes heard announcing are visited anyway")
@@ -320,7 +352,8 @@ def main():
     if any(len(n) != 16 for n in nodes):
         sys.exit("--propagation-node takes a 16-byte destination hash (32 hex digits)")
     gateway = Gateway(args.identity, args.rnsconfig, args.broker, args.port,
-                      args.announce_interval, args.name, propagation_nodes=nodes)
+                      args.announce_interval, args.name, propagation_nodes=nodes,
+                      positions_path=args.positions)
     try:
         gateway.serve_forever()
     except KeyboardInterrupt:

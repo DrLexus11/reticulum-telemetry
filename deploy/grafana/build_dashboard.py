@@ -225,6 +225,55 @@ def topology(x, y, w, h):
     }
 
 
+def board_map(x, y, w, h):
+    """Boards where they are: configured positions until the boards measure
+    their own (gateway/positions.py), green when the last probe got through."""
+    return {
+        "id": next(_ids), "type": "geomap", "title": "Boards on the map",
+        "description": "Positions are configured (no board has GNSS yet; Rev 3 adds it); the source label says "
+                       "which. A marker is green when the gateway's last probe got through, red when it did "
+                       "not, grey when the board is not probed. Map tiles need an internet connection.",
+        "datasource": DS, "gridPos": {"x": x, "y": y, "w": w, "h": h},
+        "targets": [
+            target("max by (sender, source) (mesh_board_latitude_degrees)", "A", instant=True, table=True),
+            target("max by (sender) (mesh_board_longitude_degrees)", "B", instant=True, table=True),
+            # The board's name; a board placed but not yet reporting is labelled by its id.
+            target("max by (sender, name) (mesh_board_info) or (label_replace(max by (sender) "
+                   "(mesh_board_latitude_degrees), \"name\", \"$1\", \"sender\", \"(.*)\") "
+                   "unless on(sender) max by (sender) (mesh_board_info))", "C", instant=True, table=True),
+            target("max by (sender) (mesh_board_probe_success)", "D", instant=True, table=True),
+        ],
+        "transformations": [
+            {"id": "joinByField", "options": {"byField": "sender", "mode": "outer"}},
+            {"id": "organize", "options": {
+                "excludeByName": {"Time": True, "Time A": True, "Time B": True, "Time C": True, "Time D": True,
+                                  "Value #C": True},
+                "renameByName": {"Value #A": "lat", "Value #B": "lon", "Value #D": "reachable",
+                                 "name": "Board", "source": "Position"}}},
+        ],
+        "fieldConfig": {"defaults": {"color": {"mode": "thresholds"},
+                                     "thresholds": thresholds(("red", None), ("green", 1))},
+                        "overrides": []},
+        "options": {
+            "view": {"id": "fit", "lat": 0, "lon": 0, "zoom": 16, "allLayers": True},
+            "controls": {"showZoom": True, "mouseWheelZoom": True, "showAttribution": True},
+            "basemap": {"type": "osm-standard", "name": "OpenStreetMap"},
+            "tooltip": {"mode": "details"},
+            "layers": [{
+                "type": "markers", "name": "Boards", "tooltip": True,
+                "location": {"mode": "coords", "latitude": "lat", "longitude": "lon"},
+                "config": {"showLegend": False,
+                           "style": {"size": {"fixed": 20}, "opacity": 1,
+                                     "color": {"field": "reachable", "fixed": "#808080"},
+                                     "symbol": {"mode": "fixed", "fixed": "img/icons/marker/circle.svg"},
+                                     "text": {"mode": "field", "field": "Board", "fixed": ""},
+                                     "textConfig": {"fontSize": 14, "offsetY": -24, "textAlign": "center",
+                                                    "textBaseline": "middle"}}},
+            }],
+        },
+    }
+
+
 def links_table(x, y, w, h):
     labels = "sender, neighbour, sender_name, neighbour_name, interface"
     return {
@@ -343,7 +392,8 @@ def build():
     # The detail report (every 30 min): who hears whom, the stores, the carriers.
     y = 50
     panels += [
-        topology(0, y, 24, 16),
+        topology(0, y, 16, 16),
+        board_map(16, y, 8, 16),
         who_hears_whom(0, y + 16, 12, 12),
         links_table(12, y + 16, 12, 12),
         named_table("Propagation nodes -- LXMF stores", PN_COLUMNS, 0, y + 28, 12, 7,
