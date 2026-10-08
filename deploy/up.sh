@@ -63,8 +63,8 @@ run rt-alloy --network host --user "$(id -u):$(id -g)" --userns keep-id \
   -e ALLOY_HOST="$(uname -n)" \
   -v "$here/alloy/config.alloy:/etc/alloy/config.alloy:ro,Z" \
   -v "$HOME/.impr-tak:/logs:ro" \
-  -v "$data/alloy:/var/lib/alloy/data:Z" \
+  -v "$data/alloy:/alloy-data:Z" \
   docker.io/grafana/alloy:v1.11.3 \
-  run --server.http.listen-addr=127.0.0.1:12345 --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
+  run --server.http.listen-addr=127.0.0.1:12345 --storage.path=/alloy-data /etc/alloy/config.alloy
 
 echo "MQTT 127.0.0.1:1883 · Prometheus http://127.0.0.1:9090 · Grafana http://127.0.0.1:3000 (dashboard: Mesh boards)"

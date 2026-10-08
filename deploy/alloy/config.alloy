@@ -36,8 +36,20 @@ discovery.relabel "mesh" {
 
 loki.source.file "mesh" {
   targets       = discovery.relabel.mesh.output
-  forward_to    = [loki.write.prod.receiver]
+  forward_to    = [loki.process.clean.receiver]
   tail_from_end = true
+}
+
+// A serial capture interleaves the board's console with binary KISS frames:
+// drop control characters and the replacement character invalid bytes become,
+// keep everything else (non-ASCII names included).
+loki.process "clean" {
+  forward_to = [loki.write.prod.receiver]
+
+  stage.replace {
+    expression = "([\\x00-\\x08\\x0B-\\x1F\\x7F\\x{FFFD}]+)"
+    replace    = ""
+  }
 }
 
 loki.write "prod" {
