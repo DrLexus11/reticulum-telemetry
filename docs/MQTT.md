@@ -13,6 +13,7 @@ contract, versioned like the wire format.
 | `mesh/telemetry/<sender>/detail` | gateway -> broker | 1 | yes | one decoded detail report, JSON (below) |
 | `mesh/telemetry/<sender>/backfill` | gateway -> broker | 1 | **no** | one report the board kept while no gateway was in reach (T2, below) |
 | `mesh/telemetry/<sender>/probe` | gateway -> broker | 1 | yes | the gateway's latest reachability probe of the board (below) |
+| `mesh/telemetry/<sender>/position` | gateway -> broker | 1 | yes | where the board is, configured or measured (below); empty clears it |
 
 - `<sender>` is the board's 32-bit sender id, as 8 lower-case hex digits
   (`TelemetryCodec.h`; the same id the position codec carries). Two boards in
@@ -183,6 +184,25 @@ Reticulum instance. The counts are cumulative since the gateway started.
 Boards become targets when the gateway hears their NomadNet node announce
 (hourly); they are kept on disk, with the identity's public key, so a
 restarted gateway probes at once.
+
+### Position, version 1
+
+No fielded board measures its position yet (GNSS arrives with the Rev 3
+mezzanine), so positions are **configured**, in a host-local file the gateway
+reads -- `~/.config/reticulum-telemetry/board_positions.json`, never in this
+repository, since positions are exercise data -- and publishes per board,
+retained, at start and whenever the file changes (`gateway/positions.py`):
+
+```json
+{"v": 1, "sender": "0a0b0c0d", "name": "board-1", "lat": 41.0, "lon": 29.0,
+ "source": "configured", "at": 1790000000.0}
+```
+
+A board taken out of the file gets an empty retained message, which clears
+it. A board that measures its own position will publish the same shape with
+`"source": "gnss"`. The backend exports `mesh_board_{latitude,longitude}_degrees`
+labelled with the source, and the dashboard's map draws them; a configured
+position is never presented as a live fix.
 
 ## Held for the node control plane
 
