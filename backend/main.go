@@ -33,6 +33,7 @@ func main() {
 	metrics := NewMetrics(reg)
 	details := NewDetailMetrics(reg)
 	backfill := NewBackfill(reg, *remoteWrite)
+	probes := NewProbeMetrics(reg)
 
 	handle := func(_ mqtt.Client, m mqtt.Message) {
 		apply := metrics.Apply
@@ -41,6 +42,8 @@ func main() {
 			apply = details.Apply
 		case strings.HasSuffix(m.Topic(), "/backfill"):
 			apply = backfill.Apply
+		case strings.HasSuffix(m.Topic(), "/probe"):
+			apply = probes.Apply
 		}
 		if err := apply(m.Payload()); err != nil {
 			log.Printf("refused %s: %v", m.Topic(), err)

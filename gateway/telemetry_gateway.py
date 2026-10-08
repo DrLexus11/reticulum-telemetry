@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import backfill  # noqa: E402
 import board_names  # noqa: E402
 import lxmf_inbox  # noqa: E402
+import probes  # noqa: E402
 import spool  # noqa: E402
 import report  # noqa: E402
 import telemetry_codec  # noqa: E402
@@ -56,6 +57,8 @@ class Gateway:
         # beside the identity so a restart names them at once.
         folder = os.path.dirname(os.path.expanduser(identity_path)) or "."
         self.names = board_names.BoardNames(os.path.join(folder, "board_names.json"))
+        # Boards to probe, by their NomadNet node (probes.py).
+        self.probe_book = probes.ProbeBook(os.path.join(folder, "probe_targets.json"))
         # People, from their LXMF display names: who a board hears is often a
         # phone. Kept apart, so a board announcing both keeps its node's name.
         self.people = board_names.BoardNames(os.path.join(folder, "people_names.json"),
@@ -66,6 +69,10 @@ class Gateway:
             aspect_filter = "nomadnetwork.node"
 
             def received_announce(self, destination_hash, announced_identity, app_data):
+                if announced_identity is not None:
+                    gateway.probe_book.heard(board_names.sender_of(announced_identity.hash),
+                                             bytes(destination_hash).hex(),
+                                             announced_identity.get_public_key().hex())
                 if announced_identity is not None and gateway.names.heard(announced_identity.hash, app_data):
                     print("[gateway] %s is %s" % (board_names.sender_of(announced_identity.hash),
                                                   gateway.names.name_for(board_names.sender_of(announced_identity.hash))),
@@ -112,6 +119,7 @@ class Gateway:
                                       self._batch, log=lambda line: print(line, flush=True),
                                       always=propagation_nodes)
         threading.Thread(target=self.inbox.sync_forever, daemon=True, name="lxmf-inbox").start()
+        threading.Thread(target=self._probe_forever, daemon=True, name="probes").start()
 
     def _identity(self, path):
         path = os.path.expanduser(path)
@@ -205,6 +213,63 @@ class Gateway:
                                  log=lambda line: print(line, flush=True))
             except Exception as error:                      # noqa: BLE001
                 print("[spool] drain failed: %s" % error, flush=True)
+
+    def _probe_forever(self):
+        time.sleep(60)   # let paths form after start
+        next_pass = time.time()
+        while True:
+            for sender, target in self.probe_book.snapshot():
+                try:
+                    self._probe(sender, target)
+                except Exception as error:                      # noqa: BLE001
+                    print("[probe] %s: %s" % (sender, error), flush=True)
+                time.sleep(2)   # one board at a time: no burst on a shared channel
+            # Each pass starts an interval after the last one started, however
+            # many boards there are.
+            next_pass += probes.PROBE_INTERVAL_S
+            time.sleep(max(0.0, next_pass - time.time()))
+
+    def _probe(self, sender, target):
+        RNS = self.rns
+        node_hash = bytes.fromhex(target["node"])
+        identity = None
+        if target.get("key"):
+            identity = RNS.Identity(create_keys=False)
+            identity.load_public_key(bytes.fromhex(target["key"]))
+        else:
+            identity = RNS.Identity.recall(node_hash)
+        if identity is None:
+            RNS.Transport.request_path(node_hash)
+            print("[probe] %s: identity not known yet; waiting for its announce" % sender, flush=True)
+            return
+        destination = RNS.Destination(identity, RNS.Destination.OUT, RNS.Destination.SINGLE,
+                                      "rnstransport", "probe")
+        if not RNS.Transport.has_path(destination.hash):
+            RNS.Transport.request_path(destination.hash)
+            deadline = time.time() + 15
+            while not RNS.Transport.has_path(destination.hash) and time.time() < deadline:
+                time.sleep(0.5)
+        if not RNS.Transport.has_path(destination.hash):
+            self._probe_result(sender, False)
+            return
+        hops = RNS.Transport.hops_to(destination.hash)
+        try:
+            via = probes.kind_of(self.reticulum.get_next_hop_if_name(destination.hash))
+        except Exception:                                       # noqa: BLE001
+            via = None
+        receipt = RNS.Packet(destination, os.urandom(16)).send()
+        if not receipt:
+            self._probe_result(sender, False, hops=hops, via=via)
+            return
+        receipt.set_timeout(probes.PROBE_TIMEOUT_S)
+        receipt.set_delivery_callback(
+            lambda r: self._probe_result(sender, True, rtt=r.get_rtt(), hops=hops, via=via))
+        receipt.set_timeout_callback(lambda r: self._probe_result(sender, False, hops=hops, via=via))
+
+    def _probe_result(self, sender, delivered, rtt=None, hops=None, via=None):
+        message = self.probe_book.result(sender, time.time(), delivered, rtt_s=rtt, hops=hops, via=via,
+                                         name=self.name_for(sender), gateway=self.name)
+        self.mqtt.publish(report.TOPIC_PREFIX + sender + "/probe", json.dumps(message), qos=1, retain=True)
 
     def announce(self):
         self.destination.announce(app_data=self.name.encode("utf-8"))

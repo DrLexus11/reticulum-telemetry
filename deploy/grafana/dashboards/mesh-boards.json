@@ -383,7 +383,7 @@
             "uid": "prometheus"
           },
           "refId": "H",
-          "expr": "sum by (sender) (mesh_board_interface_up)",
+          "expr": "max by (sender) (mesh_board_probe_success)",
           "instant": true,
           "range": false,
           "format": "table"
@@ -394,7 +394,7 @@
             "uid": "prometheus"
           },
           "refId": "I",
-          "expr": "max by (sender) (mesh_board_paths)",
+          "expr": "max by (sender) (mesh_board_probe_rtt_seconds)",
           "instant": true,
           "range": false,
           "format": "table"
@@ -405,7 +405,7 @@
             "uid": "prometheus"
           },
           "refId": "J",
-          "expr": "max by (sender) (mesh_board_nodes)",
+          "expr": "sum by (sender) (mesh_board_interface_up)",
           "instant": true,
           "range": false,
           "format": "table"
@@ -416,7 +416,7 @@
             "uid": "prometheus"
           },
           "refId": "K",
-          "expr": "max by (sender) (mesh_board_time_current)",
+          "expr": "max by (sender) (mesh_board_paths)",
           "instant": true,
           "range": false,
           "format": "table"
@@ -427,7 +427,7 @@
             "uid": "prometheus"
           },
           "refId": "L",
-          "expr": "max by (sender) (mesh_board_relaying)",
+          "expr": "max by (sender) (mesh_board_nodes)",
           "instant": true,
           "range": false,
           "format": "table"
@@ -438,7 +438,7 @@
             "uid": "prometheus"
           },
           "refId": "M",
-          "expr": "max by (sender) (mesh_board_psram_free_bytes)",
+          "expr": "max by (sender) (mesh_board_time_current)",
           "instant": true,
           "range": false,
           "format": "table"
@@ -449,6 +449,28 @@
             "uid": "prometheus"
           },
           "refId": "N",
+          "expr": "max by (sender) (mesh_board_relaying)",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "O",
+          "expr": "max by (sender) (mesh_board_psram_free_bytes)",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "P",
           "expr": "max by (sender) (mesh_board_battery_percent)",
           "instant": true,
           "range": false,
@@ -494,7 +516,9 @@
               "Time K": true,
               "Time L": true,
               "Time M": true,
-              "Time N": true
+              "Time N": true,
+              "Time O": true,
+              "Time P": true
             },
             "renameByName": {
               "name": "Board",
@@ -508,13 +532,15 @@
               "Value #E": "Largest block",
               "Value #F": "Restarts",
               "Value #G": "Hops",
-              "Value #H": "Carriers up",
-              "Value #I": "Paths",
-              "Value #J": "Nodes",
-              "Value #K": "Clock",
-              "Value #L": "Relaying",
-              "Value #M": "PSRAM free",
-              "Value #N": "Battery"
+              "Value #H": "Reachable",
+              "Value #I": "RTT",
+              "Value #J": "Carriers up",
+              "Value #K": "Paths",
+              "Value #L": "Nodes",
+              "Value #M": "Clock",
+              "Value #N": "Relaying",
+              "Value #O": "PSRAM free",
+              "Value #P": "Battery"
             },
             "indexByName": {
               "Board": 0,
@@ -525,16 +551,18 @@
               "Largest block": 5,
               "Restarts": 6,
               "Hops": 7,
-              "Carriers up": 8,
-              "Paths": 9,
-              "Nodes": 10,
-              "Clock": 11,
-              "Relaying": 12,
-              "PSRAM free": 13,
-              "Battery": 14,
-              "Firmware": 15,
-              "Version": 16,
-              "Build": 17
+              "Reachable": 8,
+              "RTT": 9,
+              "Carriers up": 10,
+              "Paths": 11,
+              "Nodes": 12,
+              "Clock": 13,
+              "Relaying": 14,
+              "PSRAM free": 15,
+              "Battery": 16,
+              "Firmware": 17,
+              "Version": 18,
+              "Build": 19
             }
           }
         },
@@ -693,6 +721,58 @@
               {
                 "id": "unit",
                 "value": "none"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Reachable"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "yes",
+                        "color": "green"
+                      },
+                      "0": {
+                        "text": "no",
+                        "color": "red"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "description",
+                "value": "The gateway's latest probe: did a packet to the board get a proof back"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "RTT"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
               }
             ]
           },
@@ -2179,6 +2259,124 @@
     {
       "id": 21,
       "type": "timeseries",
+      "title": "Probe round-trip time",
+      "description": "The gateway's probe of each board, every 5 minutes: measured, not inferred",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 101,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "max by (sender) (mesh_board_probe_rtt_seconds) * on(sender) group_left(name) max by (sender, name) (mesh_board_info)",
+          "legendFormat": "{{name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 2,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 22,
+      "type": "timeseries",
+      "title": "Probe loss, last hour",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 101,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "(1 - (max by (sender) (increase(mesh_board_probes_delivered_total[1h])) / max by (sender) (increase(mesh_board_probes_sent_total[1h])))) * on(sender) group_left(name) max by (sender, name) (mesh_board_info)",
+          "legendFormat": "{{name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "lineWidth": 2,
+            "spanNulls": false,
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.2
+              },
+              {
+                "color": "red",
+                "value": 0.5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 23,
+      "type": "timeseries",
       "title": "LoRa channel use",
       "description": "",
       "datasource": {
@@ -2226,7 +2424,7 @@
       }
     },
     {
-      "id": 22,
+      "id": 24,
       "type": "timeseries",
       "title": "LoRa noise floor",
       "description": "",
