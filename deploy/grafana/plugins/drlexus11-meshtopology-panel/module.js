@@ -210,10 +210,10 @@ function (React, grafanaData, grafanaUi, grafanaRuntime) {
         arrows: { to: { enabled: oneWay, scaleFactor: 0.5 } },
         length: 240
       };
-      if (options.edgeLabels) {
-        edge.label = c.name + (best !== null ? " " + Math.round(best) + " dBm" : "");
-        edge.font = Object.assign({}, font, { size: 11, align: "horizontal" });
-      }
+      // Always set: DataSet.update() merges, so a label left out would stay
+      // on screen after the option is turned off.
+      edge.label = options.edgeLabels ? c.name + (best !== null ? " " + Math.round(best) + " dBm" : "") : "";
+      edge.font = Object.assign({}, font, { size: 11, align: "horizontal" });
       return edge;
     });
 
