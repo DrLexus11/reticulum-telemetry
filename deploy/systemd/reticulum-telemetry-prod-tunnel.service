@@ -10,7 +10,7 @@ StartLimitIntervalSec=0
 [Service]
 Type=simple
 EnvironmentFile=%E/reticulum-telemetry/prod-tunnel.env
-ExecStart=/usr/bin/ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -L 127.0.0.1:18830:127.0.0.1:1883 -L 127.0.0.1:19191:127.0.0.1:9191 ${PROD_SSH_HOST}
+ExecStart=/usr/bin/ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -L 127.0.0.1:18830:127.0.0.1:1883 -L 127.0.0.1:19191:127.0.0.1:9191 -L 127.0.0.1:13100:127.0.0.1:3100 ${PROD_SSH_HOST}
 Restart=always
 RestartSec=15
 

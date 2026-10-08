@@ -1,0 +1,61 @@
+// The mesh host's log collector (TAKDeliveryPlan T6): tails the logs this
+// host writes to ~/.impr-tak/logs (the gateway, the backend, the TAK bridge
+// when started with its output there) and the serial captures in
+// ~/.impr-tak/soak -- the only two folders mounted -- and ships them to production's Loki through the SSH
+// tunnel (connect-dev.sh forwards 127.0.0.1:13100). Read from their current
+// end -- a line without its own timestamp would otherwise be stamped with the
+// moment of import. Run by deploy/up.sh as rt-alloy.
+//
+// Labels: job (gateway, backend, bridge, serial), host, and board for a
+// board's serial capture (from its file name: rev2-2-20261008-....log ->
+// rev2-2). Boards' own logs over the mesh come later, labelled by sender.
+
+local.file_match "mesh" {
+  path_targets = [
+    {"__path__" = "/logs/telemetry-gateway.log", "job" = "gateway"},
+    {"__path__" = "/logs/telemetry-backend.log", "job" = "backend"},
+    {"__path__" = "/logs/bridge-*.log", "job" = "bridge"},
+    // Serial captures (tools/serial_soak.py names them board-date-build.log);
+    // the flash and build logs beside them are left out.
+    {"__path__" = "/soak/rev*-20[0-9][0-9][0-9][0-9][0-9][0-9]-*.log", "job" = "serial"},
+    {"__path__" = "/soak/*-serial.log", "job" = "serial"},
+  ]
+}
+
+discovery.relabel "mesh" {
+  targets = local.file_match.mesh.targets
+  rule {
+    source_labels = ["__path__"]
+    regex         = "/soak/(rev[0-9]+(?:-[0-9]+)?)-.*"
+    target_label  = "board"
+    replacement   = "$1"
+  }
+  rule {
+    target_label = "host"
+    replacement  = sys.env("ALLOY_HOST")
+  }
+}
+
+loki.source.file "mesh" {
+  targets       = discovery.relabel.mesh.output
+  forward_to    = [loki.process.clean.receiver]
+  tail_from_end = true
+}
+
+// A serial capture interleaves the board's console with binary KISS frames:
+// drop control characters and the replacement character invalid bytes become,
+// keep everything else (non-ASCII names included).
+loki.process "clean" {
+  forward_to = [loki.write.prod.receiver]
+
+  stage.replace {
+    expression = "([\\x00-\\x08\\x0B-\\x1F\\x7F\\x{FFFD}]+)"
+    replace    = ""
+  }
+}
+
+loki.write "prod" {
+  endpoint {
+    url = "http://127.0.0.1:13100/loki/api/v1/push"
+  }
+}

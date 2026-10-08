@@ -15,7 +15,9 @@ EnvironmentFile=%E/reticulum-telemetry/gateway.env
 ExecStart=%h/.local/share/rnode-rns-venv/bin/python -u gateway/telemetry_gateway.py --identity %h/.impr-tak/telemetry-gateway/identity --name ${GATEWAY_NAME} $GATEWAY_EXTRA_ARGS
 Restart=always
 RestartSec=10
-StandardOutput=append:%h/.impr-tak/telemetry-gateway.log
+# In the logs folder the log collector reads (deploy/alloy); install-services.sh
+# creates it -- systemd opens this file before any command of the unit runs.
+StandardOutput=append:%h/.impr-tak/logs/telemetry-gateway.log
 StandardError=inherit
 
 [Install]

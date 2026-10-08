@@ -1,0 +1,8 @@
+# Dev reads production's Loki through the SSH tunnel (connect-dev.sh forwards
+# 13100): the deck's RAM is tight, so it ships logs rather than storing them.
+apiVersion: 1
+datasources:
+  - name: Loki
+    uid: loki
+    type: loki
+    url: http://127.0.0.1:13100

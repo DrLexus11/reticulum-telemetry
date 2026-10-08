@@ -425,6 +425,7 @@ def build():
         "uid": "mesh-boards", "title": "Mesh boards", "tags": ["mesh", "telemetry"],
         "timezone": "browser", "refresh": "30s", "schemaVersion": 39, "version": 4,
         "time": {"from": "now-24h", "to": "now"}, "panels": panels,
+        "links": [{"title": "Mesh logs", "type": "link", "url": "/d/mesh-logs", "icon": "doc"}],
     }
 
 
