@@ -36,13 +36,20 @@ run rt-prometheus --network host --user "$(id -u):$(id -g)" --userns keep-id \
   --storage.tsdb.retention.time=30d --web.listen-address=127.0.0.1:9090 \
   --web.enable-remote-write-receiver
 
+# The topology plugin is copied, not bind-mounted from the checkout: a branch
+# switch removes and recreates the folder, and a running Grafana would keep the
+# deleted one (module.js 404, "Error loading", 2026-10-08). Run this again after
+# changing the plugin.
+rm -rf "$data/grafana-plugins" && mkdir -p "$data/grafana-plugins"
+cp -r "$here/grafana/plugins/." "$data/grafana-plugins/"
+
 run rt-grafana --network host --user "$(id -u):$(id -g)" --userns keep-id \
   -e GF_SERVER_HTTP_ADDR=127.0.0.1 -e GF_SERVER_HTTP_PORT=3000 \
   -e GF_AUTH_ANONYMOUS_ENABLED=true -e GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer \
   -e GF_ANALYTICS_REPORTING_ENABLED=false -e GF_ANALYTICS_CHECK_FOR_UPDATES=false \
   -v "$here/grafana/provisioning:/etc/grafana/provisioning:ro,Z" \
   -v "$here/grafana/dashboards:/var/lib/grafana/dashboards:ro,Z" \
-  -v "$here/grafana/plugins/drlexus11-meshtopology-panel:/var/lib/grafana/plugins/drlexus11-meshtopology-panel:ro,Z" \
+  -v "$data/grafana-plugins/drlexus11-meshtopology-panel:/var/lib/grafana/plugins/drlexus11-meshtopology-panel:ro,Z" \
   -e GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=drlexus11-meshtopology-panel \
   -v "$data/grafana:/var/lib/grafana/data:Z" \
   -e GF_PATHS_DATA=/var/lib/grafana/data \

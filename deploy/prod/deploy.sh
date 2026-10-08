@@ -22,4 +22,8 @@ if ! grep -q '^GRAFANA_ADMIN_PASSWORD=.' .env; then
 fi
 chmod 600 .env
 docker compose up -d --build
+# Grafana bind-mounts folders of this checkout (dashboards, the topology
+# plugin). A git checkout or pull can replace a folder, and a running container
+# would keep the old one; a restart mounts what is there now.
+docker compose restart grafana
 docker compose ps --format '{{.Service}} {{.Status}}'
