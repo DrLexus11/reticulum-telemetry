@@ -1,0 +1,17 @@
+{
+  "type": "panel",
+  "name": "Mesh topology",
+  "id": "drlexus11-meshtopology-panel",
+  "info": {
+    "description": "Who hears whom on the mesh, drawn as a force-directed map in the style of Crosstalk's network view.",
+    "author": { "name": "DrLexus11" },
+    "keywords": ["reticulum", "mesh", "topology"],
+    "logos": { "small": "img/server.png", "large": "img/server.png" },
+    "version": "1.0.0",
+    "updated": "2026-10-08"
+  },
+  "dependencies": {
+    "grafanaDependency": ">=11.0.0",
+    "plugins": []
+  }
+}

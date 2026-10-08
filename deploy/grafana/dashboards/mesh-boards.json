@@ -8,7 +8,7 @@
   "timezone": "browser",
   "refresh": "30s",
   "schemaVersion": 39,
-  "version": 3,
+  "version": 4,
   "time": {
     "from": "now-24h",
     "to": "now"
@@ -1240,6 +1240,82 @@
     },
     {
       "id": 14,
+      "type": "drlexus11-meshtopology-panel",
+      "title": "Topology -- who hears whom",
+      "description": "Boards (server icons) and the nodes they hear directly (person icons). A ring's colour is how recently the board reported, or the node was heard; a link's colour is its carrier, an arrow means only one side hears the other. Hover for details.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 50,
+        "w": 24,
+        "h": 16
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "max by (node, name) (mesh_node_info)",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "B",
+          "expr": "time() - max by (sender, neighbour, interface) (mesh_link_heard_timestamp_seconds)",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "C",
+          "expr": "max by (sender, neighbour, interface) (mesh_link_rssi_dbm)",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "D",
+          "expr": "time() - max by (sender) (mesh_board_report_received_timestamp_seconds)",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "E",
+          "expr": "max by (sender, name) (mesh_board_info)",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "options": {
+        "edgeLabels": true
+      }
+    },
+    {
+      "id": 15,
       "type": "table",
       "title": "Who hears whom -- time since heard directly",
       "description": "Rows hear columns. From each board's detail report (every 30 min): the one-hop neighbours it heard announce, over any carrier. Empty: not heard directly.",
@@ -1249,7 +1325,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 50,
+        "y": 66,
         "w": 12,
         "h": 12
       },
@@ -1343,90 +1419,6 @@
       }
     },
     {
-      "id": 15,
-      "type": "nodeGraph",
-      "title": "Topology -- one-hop links",
-      "description": "Every node a board reports hearing, and the boards themselves. An arrow runs from the board that heard to the node it heard; its figure is seconds since.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 50,
-        "w": 12,
-        "h": 12
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "refId": "A",
-          "expr": "max by (node, name) (mesh_node_info)",
-          "instant": true,
-          "range": false,
-          "format": "table"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "refId": "B",
-          "expr": "label_join(time() - max by (sender, neighbour, interface) (mesh_link_heard_timestamp_seconds), \"id\", \"-\", \"sender\", \"neighbour\", \"interface\")",
-          "instant": true,
-          "range": false,
-          "format": "table"
-        }
-      ],
-      "transformations": [
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true,
-              "Value #A": true
-            },
-            "renameByName": {
-              "node": "id",
-              "name": "title",
-              "sender": "source",
-              "neighbour": "target",
-              "interface": "secondarystat",
-              "Value #B": "mainstat"
-            }
-          }
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "mainstat"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "s"
-              },
-              {
-                "id": "decimals",
-                "value": 0
-              }
-            ]
-          }
-        ]
-      },
-      "options": {
-        "nodes": {},
-        "edges": {}
-      }
-    },
-    {
       "id": 16,
       "type": "table",
       "title": "Neighbour links",
@@ -1435,10 +1427,10 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "x": 0,
-        "y": 62,
-        "w": 24,
-        "h": 8
+        "x": 12,
+        "y": 66,
+        "w": 12,
+        "h": 12
       },
       "targets": [
         {
@@ -1587,7 +1579,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 70,
+        "y": 78,
         "w": 12,
         "h": 7
       },
@@ -1856,7 +1848,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 70,
+        "y": 78,
         "w": 12,
         "h": 7
       },
@@ -2097,7 +2089,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 77,
+        "y": 85,
         "w": 12,
         "h": 8
       },
@@ -2146,7 +2138,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 77,
+        "y": 85,
         "w": 12,
         "h": 8
       },
@@ -2195,7 +2187,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 85,
+        "y": 93,
         "w": 12,
         "h": 8
       },
@@ -2244,7 +2236,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 85,
+        "y": 93,
         "w": 12,
         "h": 8
       },
