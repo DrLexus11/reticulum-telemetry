@@ -56,13 +56,15 @@ run rt-grafana --network host --user "$(id -u):$(id -g)" --userns keep-id \
   docker.io/grafana/grafana-oss:latest
 
 # The log collector (T6): this host's logs to production's Loki, through the
-# tunnel. The log folder is mounted read-only; only the files config.alloy
-# names are read.
-mkdir -p "$data/alloy"
+# tunnel. Only the logs folder and the serial captures are mounted, read-only:
+# ~/.impr-tak itself holds identities and secrets a log shipper has no business
+# seeing.
+mkdir -p "$data/alloy" "$HOME/.impr-tak/logs" "$HOME/.impr-tak/soak"
 run rt-alloy --network host --user "$(id -u):$(id -g)" --userns keep-id \
   -e ALLOY_HOST="$(uname -n)" \
   -v "$here/alloy/config.alloy:/etc/alloy/config.alloy:ro,Z" \
-  -v "$HOME/.impr-tak:/logs:ro" \
+  -v "$HOME/.impr-tak/logs:/logs:ro" \
+  -v "$HOME/.impr-tak/soak:/soak:ro" \
   -v "$data/alloy:/alloy-data:Z" \
   docker.io/grafana/alloy:v1.11.3 \
   run --server.http.listen-addr=127.0.0.1:12345 --storage.path=/alloy-data /etc/alloy/config.alloy

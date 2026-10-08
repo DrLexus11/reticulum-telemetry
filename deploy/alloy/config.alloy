@@ -1,5 +1,7 @@
 // The mesh host's log collector (TAKDeliveryPlan T6): tails the logs this
-// host already writes and ships them to production's Loki through the SSH
+// host writes to ~/.impr-tak/logs (the gateway, the backend, the TAK bridge
+// when started with its output there) and the serial captures in
+// ~/.impr-tak/soak -- the only two folders mounted -- and ships them to production's Loki through the SSH
 // tunnel (connect-dev.sh forwards 127.0.0.1:13100). Read from their current
 // end -- a line without its own timestamp would otherwise be stamped with the
 // moment of import. Run by deploy/up.sh as rt-alloy.
@@ -15,8 +17,8 @@ local.file_match "mesh" {
     {"__path__" = "/logs/bridge-*.log", "job" = "bridge"},
     // Serial captures (tools/serial_soak.py names them board-date-build.log);
     // the flash and build logs beside them are left out.
-    {"__path__" = "/logs/soak/rev*-20[0-9][0-9][0-9][0-9][0-9][0-9]-*.log", "job" = "serial"},
-    {"__path__" = "/logs/soak/*-serial.log", "job" = "serial"},
+    {"__path__" = "/soak/rev*-20[0-9][0-9][0-9][0-9][0-9][0-9]-*.log", "job" = "serial"},
+    {"__path__" = "/soak/*-serial.log", "job" = "serial"},
   ]
 }
 
@@ -24,7 +26,7 @@ discovery.relabel "mesh" {
   targets = local.file_match.mesh.targets
   rule {
     source_labels = ["__path__"]
-    regex         = "/logs/soak/(rev[0-9]+(?:-[0-9]+)?)-.*"
+    regex         = "/soak/(rev[0-9]+(?:-[0-9]+)?)-.*"
     target_label  = "board"
     replacement   = "$1"
   }

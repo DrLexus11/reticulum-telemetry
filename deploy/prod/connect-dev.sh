@@ -24,6 +24,8 @@ restart_timeout 10 60
 CONF
 cp "$here/systemd/reticulum-telemetry-prod-tunnel.service" "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/"
 systemctl --user daemon-reload
-systemctl --user enable --now reticulum-telemetry-prod-tunnel.service
+systemctl --user enable reticulum-telemetry-prod-tunnel.service
+# Restart, not only start: an active tunnel keeps its old forwards until it is.
+systemctl --user restart reticulum-telemetry-prod-tunnel.service
 podman restart rt-mosquitto >/dev/null
 echo "tunnel: $(systemctl --user is-active reticulum-telemetry-prod-tunnel.service); bridge configured in $cfg/mosquitto.d/bridge-prod.conf"

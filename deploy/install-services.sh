@@ -22,6 +22,8 @@ if [ ! -f "$env_dir/gateway.env" ]; then
   mkdir -p "$env_dir"
   printf 'GATEWAY_NAME=%s\n' "$name" > "$env_dir/gateway.env"
 fi
+# The services' logs, the only host folder the log collector may read.
+mkdir -p "$HOME/.impr-tak/logs"
 cp "$here"/systemd/reticulum-telemetry-*.service "$units/"
 systemctl --user daemon-reload
 systemctl --user enable podman-restart.service

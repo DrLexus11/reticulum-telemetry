@@ -10,7 +10,9 @@ Type=simple
 ExecStart=%h/.local/bin/reticulum-telemetry-backend
 Restart=always
 RestartSec=10
-StandardOutput=append:%h/.impr-tak/telemetry-backend.log
+# In the logs folder the log collector reads (deploy/alloy); install-services.sh
+# creates it -- systemd opens this file before any command of the unit runs.
+StandardOutput=append:%h/.impr-tak/logs/telemetry-backend.log
 StandardError=inherit
 
 [Install]
