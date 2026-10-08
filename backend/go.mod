@@ -4,7 +4,9 @@ go 1.25.0
 
 require (
 	github.com/eclipse/paho.mqtt.golang v1.5.1
+	github.com/klauspost/compress v1.19.1
 	github.com/prometheus/client_golang v1.24.1
+	google.golang.org/protobuf v1.36.11
 )
 
 require (
@@ -19,5 +21,4 @@ require (
 	golang.org/x/net v0.57.0 // indirect
 	golang.org/x/sync v0.21.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
-	google.golang.org/protobuf v1.36.11 // indirect
 )

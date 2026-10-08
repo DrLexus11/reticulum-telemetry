@@ -8,9 +8,11 @@ StartLimitIntervalSec=0
 [Service]
 Type=simple
 WorkingDirectory=%h/projects/reticulum-telemetry
-# GATEWAY_NAME lives in this host's own file, never in the repository.
+# GATEWAY_NAME lives in this host's own file, never in the repository, as does
+# GATEWAY_EXTRA_ARGS (optional): e.g. --propagation-node <hash> for this host's
+# lxmd, so the gateway collects T2 batches from it even when it is not heard.
 EnvironmentFile=%E/reticulum-telemetry/gateway.env
-ExecStart=%h/.local/share/rnode-rns-venv/bin/python -u gateway/telemetry_gateway.py --identity %h/.impr-tak/telemetry-gateway/identity --name ${GATEWAY_NAME}
+ExecStart=%h/.local/share/rnode-rns-venv/bin/python -u gateway/telemetry_gateway.py --identity %h/.impr-tak/telemetry-gateway/identity --name ${GATEWAY_NAME} $GATEWAY_EXTRA_ARGS
 Restart=always
 RestartSec=10
 StandardOutput=append:%h/.impr-tak/telemetry-gateway.log

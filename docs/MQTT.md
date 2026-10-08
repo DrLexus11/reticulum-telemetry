@@ -11,6 +11,7 @@ contract, versioned like the wire format.
 |---|---|---|---|---|
 | `mesh/telemetry/<sender>` | gateway -> broker | 1 | yes | one decoded health report, JSON (below) |
 | `mesh/telemetry/<sender>/detail` | gateway -> broker | 1 | yes | one decoded detail report, JSON (below) |
+| `mesh/telemetry/<sender>/backfill` | gateway -> broker | 1 | **no** | one report the board kept while no gateway was in reach (T2, below) |
 
 - `<sender>` is the board's 32-bit sender id, as 8 lower-case hex digits
   (`TelemetryCodec.h`; the same id the position codec carries). Two boards in
@@ -131,6 +132,36 @@ Built by `gateway/report.py` (`detail_to_message`), tested in
   gateway has heard that identity announce (NomadNet for boards, LXMF display
   names for people), else `null`. `heard_s` has minute resolution and
   saturates at 255 minutes.
+
+### Backfill, version 1 (T2)
+
+A board with no gateway in reach keeps its health and detail reports and,
+about hourly, sends them as one LXMF message -- a batch, the firmware's
+`TelemetryBatchCodec.h` (0x31), pinned by `tests/fixtures/telemetry_batch_v1.json`
+-- to the gateway's LXMF delivery destination, through its own propagation
+node. The gateway collects batches from every propagation node it hears, and
+from any named with `--propagation-node`, and accepts one only when LXMF
+validated its signature and the signer is the board the batch names
+(`gateway/lxmf_inbox.py`, `gateway/backfill.py`).
+
+Each report becomes one message on `mesh/telemetry/<sender>/backfill`, **not
+retained**: on the live topic an hour-old report would overwrite the board's
+current state. The message is the live message's shape -- health or detail,
+as above -- with `received_at` set to when the report was **taken**, plus:
+
+```json
+  "kind": "health",
+  "backfill": {"exact": true, "collected_at": 1790003600.0}
+```
+
+`exact` is false only when the board's clock was not set, so the time was
+counted back from collection and is late by however long the batch waited.
+The backend writes these into Prometheus at their own time through its
+remote-write receiver, under the live metric names with an added
+`backfill="exact"` or `"approximate"` label, so dashboards fill the gap without
+a change. Prometheus accepts samples up to 48 h old (`out_of_order_time_window`):
+a longer partition loses its oldest reports. `tools/send_test_batch.py` sends
+a test batch the way a board would.
 
 ## Held for the node control plane
 
