@@ -59,6 +59,14 @@ class Probes(unittest.TestCase):
         self.assertFalse(lost["delivered"])
 
 
+    def test_a_path_is_healed_every_few_losses_in_a_row(self):
+        book = probes.ProbeBook()
+        results = []
+        for delivered in (False, False, False, False, True, False):
+            book.result("0a0b0c0d", 0.0, delivered)
+            results.append(book.should_heal("0a0b0c0d"))
+        self.assertEqual(results, [False, True, False, True, False, False])
+
     def test_the_counts_hold_under_concurrent_results(self):
         import threading
         book = probes.ProbeBook()

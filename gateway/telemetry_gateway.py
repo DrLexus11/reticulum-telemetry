@@ -250,7 +250,7 @@ class Gateway:
             while not RNS.Transport.has_path(destination.hash) and time.time() < deadline:
                 time.sleep(0.5)
         if not RNS.Transport.has_path(destination.hash):
-            self._probe_result(sender, False)
+            self._probe_result(sender, False, heal=(destination.hash, node_hash))
             return
         hops = RNS.Transport.hops_to(destination.hash)
         try:
@@ -264,12 +264,24 @@ class Gateway:
         receipt.set_timeout(probes.PROBE_TIMEOUT_S)
         receipt.set_delivery_callback(
             lambda r: self._probe_result(sender, True, rtt=r.get_rtt(), hops=hops, via=via))
-        receipt.set_timeout_callback(lambda r: self._probe_result(sender, False, hops=hops, via=via))
+        receipt.set_timeout_callback(lambda r: self._probe_result(sender, False, hops=hops, via=via,
+                                                                  heal=(destination.hash, node_hash)))
 
-    def _probe_result(self, sender, delivered, rtt=None, hops=None, via=None):
+    def _probe_result(self, sender, delivered, rtt=None, hops=None, via=None, heal=()):
         message = self.probe_book.result(sender, time.time(), delivered, rtt_s=rtt, hops=hops, via=via,
                                          name=self.name_for(sender), gateway=self.name)
         self.mqtt.publish(report.TOPIC_PREFIX + sender + "/probe", json.dumps(message), qos=1, retain=True)
+        if not delivered and heal and self.probe_book.should_heal(sender):
+            # The shared instance holds the path for everything on this host,
+            # the TAK bridge included: dropping it heals the route for all.
+            for destination_hash in heal:
+                try:
+                    self.reticulum.drop_path(destination_hash)
+                except Exception as error:                      # noqa: BLE001
+                    print("[probe] %s: could not drop a path: %s" % (sender, error), flush=True)
+                self.rns.Transport.request_path(destination_hash)
+            print("[probe] %s: %d probes lost in a row; dropped its paths and asked again"
+                  % (sender, self.probe_book.lost_in_a_row.get(sender, 0)), flush=True)
 
     def announce(self):
         self.destination.announce(app_data=self.name.encode("utf-8"))
