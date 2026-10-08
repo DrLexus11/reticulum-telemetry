@@ -2869,5 +2869,13 @@
         }
       }
     }
+  ],
+  "links": [
+    {
+      "title": "Mesh logs",
+      "type": "link",
+      "url": "/d/mesh-logs",
+      "icon": "doc"
+    }
   ]
 }
