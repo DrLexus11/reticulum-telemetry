@@ -30,6 +30,11 @@ import threading
 
 PROBE_INTERVAL_S = 300
 PROBE_TIMEOUT_S = 60     # a two-hop LoRa round trip takes seconds; a minute is generous
+# Consecutive losses after which the gateway drops its path to the board and
+# asks again: a route that outlived a disruption carries nothing toward the
+# board while the board's own traffic still arrives (CarriedIssues #12, found
+# after the 2026-10-08 power cut). Every HEAL_AFTER losses, not once.
+HEAL_AFTER = 2
 
 KINDS = (("rnode", "lora"), ("lora", "lora"), ("udp", "udp"), ("tcp", "tcp"), ("backbone", "tcp"),
          ("auto", "auto"), ("ble", "ble"), ("i2p", "i2p"), ("serial", "serial"), ("kiss", "serial"),
@@ -53,6 +58,7 @@ class ProbeBook:
         self.targets = {}   # sender hex -> {"node": destination hash hex, "key": public key hex}
         self.sent = {}
         self.delivered = {}
+        self.lost_in_a_row = {}
         # Announces arrive on Reticulum's threads, results on its receipt
         # callbacks, and the probe loop reads the targets: one lock for all.
         self._lock = threading.Lock()
@@ -85,13 +91,18 @@ class ProbeBook:
             return [(k, dict(v)) for k, v in self.targets.items()]
 
     def result(self, sender_hex, at, delivered, rtt_s=None, hops=None, via=None, name=None, gateway=None):
-        """Count one probe and return its message."""
+        """Count one probe; return (heal, message). `heal` -- time to drop the
+        board's paths -- is decided under the same lock as the count, so two
+        overlapping results cannot both decide it."""
         with self._lock:
             self.sent[sender_hex] = self.sent.get(sender_hex, 0) + 1
             if delivered:
                 self.delivered[sender_hex] = self.delivered.get(sender_hex, 0) + 1
             sent, received = self.sent[sender_hex], self.delivered.get(sender_hex, 0)
-        return {
+            lost = 0 if delivered else self.lost_in_a_row.get(sender_hex, 0) + 1
+            self.lost_in_a_row[sender_hex] = lost
+            heal = lost > 0 and lost % HEAL_AFTER == 0
+        return heal, {
             "v": 1,
             "sender": sender_hex,
             "name": name,
