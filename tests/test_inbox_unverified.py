@@ -114,6 +114,46 @@ class Unverified(unittest.TestCase):
         self.assertEqual(self.kept(), [])
         self.assertEqual(self.batches, [])
 
+    def test_a_failed_hand_off_keeps_the_file(self):
+        self.inbox._delivered(Message(b"p1"), collected_at=100.0)
+        KNOWN.add(b"S" * 16)
+
+        def fail(*_a):
+            raise OSError("disk full")
+        self.inbox.on_batch = fail
+        self.inbox.retry_unverified(now=200.0)
+        self.assertEqual(len(self.kept()), 1)
+        self.inbox.on_batch = lambda b, at, signer: self.batches.append((b, at, signer))
+        self.inbox.retry_unverified(now=300.0)
+        self.assertEqual(len(self.batches), 1)
+        self.assertEqual(self.kept(), [])
+
+    def test_the_queue_is_bounded_per_signer_and_deduplicated(self):
+        for i in range(lxmf_inbox.UNVERIFIED_MAX_PER_SIGNER + 5):
+            m = Message(b"p%d" % i)
+            m.hash = bytes([i]) + bytes(31)
+            self.inbox._delivered(m, collected_at=100.0 + i)
+        self.assertEqual(len(self.kept()), lxmf_inbox.UNVERIFIED_MAX_PER_SIGNER)
+        again = Message(b"p0")
+        again.hash = bytes([0]) + bytes(31)
+        other = Message(b"q", source=b"T" * 16)
+        self.inbox._delivered(other, collected_at=500.0)
+        self.assertEqual(len(self.kept()), lxmf_inbox.UNVERIFIED_MAX_PER_SIGNER + 1)   # another signer still fits
+
+    def test_a_duplicate_is_kept_once(self):
+        self.inbox._delivered(Message(b"p1"), collected_at=100.0)
+        self.inbox._delivered(Message(b"p1"), collected_at=101.0)
+        self.assertEqual(len(self.kept()), 1)
+
+    def test_one_path_request_per_signer_per_pass(self):
+        for i in range(3):
+            m = Message(b"p%d" % i)
+            m.hash = bytes([i]) + bytes(31)
+            self.inbox._delivered(m, collected_at=100.0 + i)
+        paths.clear()
+        self.inbox.retry_unverified(now=200.0)
+        self.assertEqual(paths, [b"S" * 16])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -26,6 +26,11 @@ SYNC_SOON_S = 30           # after a node is newly heard: a vehicle back in rang
 PN_FORGET_S = 2 * 3600     # a propagation node unheard this long is not visited
 TRANSFER_TIMEOUT_S = 180   # per node: a LoRa path, a link and a resource take time
 UNVERIFIED_KEEP_S = 48 * 3600   # Prometheus's out-of-order window: older is useless
+# Kept before anyone is authenticated, so bounded: anyone can make identities.
+# Two days of hourly batches per signer; the whole queue a few MB at most.
+UNVERIFIED_MAX_PER_SIGNER = 48
+UNVERIFIED_MAX_FILES = 500
+UNVERIFIED_MAX_BYTES = 4 * 1024 * 1024
 
 
 class Inbox:
@@ -92,22 +97,38 @@ class Inbox:
         self.on_batch(bytes(content), collected_at, signer)
 
     def _keep_unverified(self, message, collected_at):
+        source = self.rns.hexrep(message.source_hash, delimit=False)
+        name = "%.6f-%s-%s.json" % (collected_at, source[:16], self.rns.hexrep(message.hash, delimit=False)[:16])
+        files = [n for n in os.listdir(self.unverified_dir) if n.endswith(".json")]
+        if any(n.endswith("-%s.json" % name.rsplit("-", 1)[1][:-5]) for n in files):
+            return   # already kept
+        size = sum(os.path.getsize(os.path.join(self.unverified_dir, n)) for n in files)
+        from_signer = sum(1 for n in files if n.split("-")[1] == source[:16])
+        if (from_signer >= UNVERIFIED_MAX_PER_SIGNER or len(files) >= UNVERIFIED_MAX_FILES
+                or size >= UNVERIFIED_MAX_BYTES):
+            self.dropped += 1
+            self.log("[inbox] batch from <%s> refused: the unverified queue is full" % source[:16])
+            return
         record = {"packed": bytes(message.packed).hex(), "collected_at": collected_at}
-        name = "%.6f-%s.json" % (collected_at, self.rns.hexrep(message.hash, delimit=False)[:16])
         path = os.path.join(self.unverified_dir, name)
         with open(path + ".tmp", "w") as f:
             json.dump(record, f)
             f.flush()
             os.fsync(f.fileno())
         os.replace(path + ".tmp", path)
+        dir_fd = os.open(self.unverified_dir, os.O_RDONLY)   # the rename, durable too
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
         self.rns.Transport.request_path(message.source_hash)   # prompts the signer's announce
-        self.log("[inbox] batch from <%s> kept until its signer is known"
-                 % self.rns.hexrep(message.source_hash, delimit=False)[:16])
+        self.log("[inbox] batch from <%s> kept until its signer is known" % source[:16])
 
     def retry_unverified(self, now=None):
         """Check kept batches again; those now verifiable go on, those too old
         for Prometheus are dropped."""
         now = time.time() if now is None else now
+        asked = set()
         for name in sorted(os.listdir(self.unverified_dir)):
             if not name.endswith(".json"):
                 continue
@@ -121,8 +142,14 @@ class Inbox:
                 os.remove(path)
                 continue
             if message.signature_validated:
+                # Removed only once the batch is safely spooled: a failed
+                # hand-off leaves it here for the next pass.
+                try:
+                    self._delivered(message, collected_at=record["collected_at"])
+                except Exception as error:                  # noqa: BLE001
+                    self.log("[inbox] %s: hand-off failed, kept: %s" % (name, error))
+                    continue
                 os.remove(path)
-                self._delivered(message, collected_at=record["collected_at"])
             elif message.unverified_reason != self.lxmf.LXMessage.SOURCE_UNKNOWN:
                 self.dropped += 1
                 self.log("[inbox] %s: signature invalid, dropped" % name)
@@ -132,7 +159,9 @@ class Inbox:
                 self.log("[inbox] %s: signer still unknown after 48 h, dropped" % name)
                 os.remove(path)
             else:
-                self.rns.Transport.request_path(message.source_hash)
+                asked.add(bytes(message.source_hash))
+        for source in asked:   # once per signer, not once per batch
+            self.rns.Transport.request_path(source)
 
     def propagation_nodes(self, now=None):
         now = time.time() if now is None else now
