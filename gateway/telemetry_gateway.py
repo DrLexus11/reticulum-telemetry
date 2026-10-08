@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import backfill  # noqa: E402
 import board_names  # noqa: E402
 import lxmf_inbox  # noqa: E402
+import spool  # noqa: E402
 import report  # noqa: E402
 import telemetry_codec  # noqa: E402
 import telemetry_detail_codec  # noqa: E402
@@ -100,6 +101,12 @@ class Gateway:
         # T2: reports boards kept while no gateway was in reach, collected from
         # the propagation nodes as LXMF batches (lxmf_inbox.py, backfill.py).
         # After MQTT, so a delivery always has a client to publish through.
+        # The delivery callback only spools: once it returns, the propagation
+        # node deletes its copy (spool.py).
+        self.spool = spool.Spool(os.path.join(folder, "spool"))
+        self._drain_now = threading.Event()
+        self._drain_now.set()   # whatever a previous run left, at start
+        threading.Thread(target=self._drain_forever, daemon=True, name="spool-drain").start()
         import LXMF
         self.inbox = lxmf_inbox.Inbox(RNS, LXMF, self.identity, os.path.join(folder, "lxmf"), name,
                                       self._batch, log=lambda line: print(line, flush=True),
@@ -164,20 +171,40 @@ class Gateway:
                  len(message["interfaces"]), len(message["neighbours"])), flush=True)
 
     def _batch(self, content, collected_at, signer):
+        """The LXMF delivery callback: durable first, published by the drain."""
+        self.spool.put(content, collected_at, signer)
+        self._drain_now.set()
+
+    def _to_messages(self, content, collected_at, signer):
         out, refused = backfill.messages(content, collected_at, gateway=self.name,
                                          name_for=self.name_for, signer=signer)
         if refused:
             self.refused += 1
-            print("[gateway] refused a batch: %s" % refused, flush=True)
-            return
-        for topic, message in out:
-            # Not retained: the live topic keeps the board's current state.
-            self.mqtt.publish(topic, json.dumps(message), qos=1, retain=False)
-        if out:
+        elif out:
             first, last = out[0][1]["received_at"], out[-1][1]["received_at"]
             print("[gateway] %08x backfill: %d report(s), %s to %s"
                   % (signer, len(out), time.strftime("%m-%d %H:%M", time.localtime(first)),
                      time.strftime("%m-%d %H:%M", time.localtime(last))), flush=True)
+        return out, refused
+
+    def _publish_acknowledged(self, topic, message):
+        # Not retained: the live topic keeps the board's current state.
+        info = self.mqtt.publish(topic, json.dumps(message), qos=1, retain=False)
+        try:
+            info.wait_for_publish(timeout=15)
+        except (RuntimeError, ValueError):     # not queued: disconnected, or the queue is full
+            return False
+        return info.is_published()
+
+    def _drain_forever(self):
+        while True:
+            self._drain_now.wait(timeout=60)
+            self._drain_now.clear()
+            try:
+                self.spool.drain(self._to_messages, self._publish_acknowledged,
+                                 log=lambda line: print(line, flush=True))
+            except Exception as error:                      # noqa: BLE001
+                print("[spool] drain failed: %s" % error, flush=True)
 
     def announce(self):
         self.destination.announce(app_data=self.name.encode("utf-8"))

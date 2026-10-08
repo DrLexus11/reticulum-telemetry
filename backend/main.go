@@ -34,7 +34,24 @@ func main() {
 	details := NewDetailMetrics(reg)
 	backfill := NewBackfill(reg, *remoteWrite)
 
+	handle := func(_ mqtt.Client, m mqtt.Message) {
+		apply := metrics.Apply
+		switch {
+		case strings.HasSuffix(m.Topic(), "/detail"):
+			apply = details.Apply
+		case strings.HasSuffix(m.Topic(), "/backfill"):
+			apply = backfill.Apply
+		}
+		if err := apply(m.Payload()); err != nil {
+			log.Printf("refused %s: %v", m.Topic(), err)
+		}
+	}
+	// A persistent session under a fixed client id: backfill is not retained,
+	// so while the backend restarts the broker must queue it (QoS 1) rather
+	// than drop it. What it queued arrives on connect, before the subscription
+	// is renewed, through the default handler.
 	opts := mqtt.NewClientOptions().AddBroker(*broker).SetClientID("telemetry-backend").
+		SetCleanSession(false).SetDefaultPublishHandler(handle).
 		SetAutoReconnect(true).SetConnectRetry(true)
 	// Credentials, if the broker needs them, come from the environment --
 	// never the command line, where they would show in a process listing.
@@ -43,18 +60,7 @@ func main() {
 	}
 	opts.SetOnConnectHandler(func(c mqtt.Client) {
 		log.Printf("broker %s connected; subscribing to %s", *broker, *topic)
-		c.Subscribe(*topic, 1, func(_ mqtt.Client, m mqtt.Message) {
-			apply := metrics.Apply
-			switch {
-			case strings.HasSuffix(m.Topic(), "/detail"):
-				apply = details.Apply
-			case strings.HasSuffix(m.Topic(), "/backfill"):
-				apply = backfill.Apply
-			}
-			if err := apply(m.Payload()); err != nil {
-				log.Printf("refused %s: %v", m.Topic(), err)
-			}
-		})
+		c.Subscribe(*topic, 1, handle)
 	})
 	client := mqtt.NewClient(opts)
 	client.Connect()

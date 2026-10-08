@@ -21,12 +21,32 @@ def case(name):
 
 
 class BatchFixture(unittest.TestCase):
+    """The copy of the firmware's codec, pinned both ways, field by field."""
+
+    def test_the_fixture_is_this_wire_version(self):
+        self.assertEqual(FIXTURE["version"], bc.WIRE_VERSION)
+
+    def test_the_copy_encodes_every_case_to_the_pinned_bytes(self):
+        for c in FIXTURE["encode"]:
+            with self.subTest(c["name"]):
+                entries = [{"time_kind": e["time_kind"], "time": e["time"],
+                            "report": bytes.fromhex(e["report_hex"])} for e in c["entries"]]
+                out = bc.encode(c["sender_id"], c["composed_unix"], entries,
+                                truncated=c["truncated"], out_len=c["out_len"])
+                self.assertEqual(out.hex(), c["hex"])
 
     def test_the_copy_decodes_every_case_as_pinned(self):
         for c in FIXTURE["decode"]:
             with self.subTest(c["name"]):
                 got = bc.decode(bytes.fromhex(c["hex"]))
-                self.assertEqual(got is None, c["batch"] is None)
+                if c["batch"] is None:
+                    self.assertIsNone(got)
+                    continue
+                want = c["batch"]
+                self.assertEqual({k: got[k] for k in ("flags", "truncated", "sender_id", "composed_unix")},
+                                 {k: want[k] for k in ("flags", "truncated", "sender_id", "composed_unix")})
+                self.assertEqual([{"time_kind": e["time_kind"], "time": e["time"], "report_hex": e["report"].hex()}
+                                  for e in got["entries"]], want["entries"])
 
 
 class Backfill(unittest.TestCase):
