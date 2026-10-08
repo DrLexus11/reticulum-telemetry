@@ -3,7 +3,8 @@
 //
 // It subscribes to mesh/telemetry/# on the broker the gateways publish to --
 // health reports on mesh/telemetry/<sender>, detail reports on
-// mesh/telemetry/<sender>/detail -- and
+// mesh/telemetry/<sender>/detail, kept reports on mesh/telemetry/<sender>/backfill,
+// written to Prometheus at their original time (backfill.go) -- and
 // serves /metrics for Prometheus. Retained messages mean a restarted backend
 // has every board's latest report at once, not after each board's next one.
 package main
@@ -24,11 +25,14 @@ func main() {
 	broker := flag.String("broker", "tcp://127.0.0.1:1883", "MQTT broker URL")
 	topic := flag.String("topic", "mesh/telemetry/#", "topic filter the gateways publish under")
 	listen := flag.String("listen", "127.0.0.1:9101", "address to serve /metrics on")
+	remoteWrite := flag.String("remote-write", "http://127.0.0.1:9090/api/v1/write",
+		"Prometheus remote-write endpoint for backfilled reports (T2)")
 	flag.Parse()
 
 	reg := prometheus.NewRegistry()
 	metrics := NewMetrics(reg)
 	details := NewDetailMetrics(reg)
+	backfill := NewBackfill(reg, *remoteWrite)
 
 	opts := mqtt.NewClientOptions().AddBroker(*broker).SetClientID("telemetry-backend").
 		SetAutoReconnect(true).SetConnectRetry(true)
@@ -41,8 +45,11 @@ func main() {
 		log.Printf("broker %s connected; subscribing to %s", *broker, *topic)
 		c.Subscribe(*topic, 1, func(_ mqtt.Client, m mqtt.Message) {
 			apply := metrics.Apply
-			if strings.HasSuffix(m.Topic(), "/detail") {
+			switch {
+			case strings.HasSuffix(m.Topic(), "/detail"):
 				apply = details.Apply
+			case strings.HasSuffix(m.Topic(), "/backfill"):
+				apply = backfill.Apply
 			}
 			if err := apply(m.Payload()); err != nil {
 				log.Printf("refused %s: %v", m.Topic(), err)

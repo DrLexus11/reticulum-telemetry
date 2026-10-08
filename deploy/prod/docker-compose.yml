@@ -19,7 +19,8 @@ services:
   backend:
     build: ../../backend
     restart: unless-stopped
-    command: ["-broker", "tcp://mosquitto:1883", "-listen", "0.0.0.0:9101"]
+    command: ["-broker", "tcp://mosquitto:1883", "-listen", "0.0.0.0:9101",
+              "-remote-write", "http://prometheus:9090/api/v1/write"]
     depends_on: [mosquitto]
 
   # A fresh named volume is root-owned and Prometheus runs as nobody: hand the

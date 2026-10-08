@@ -20,11 +20,14 @@ import argparse
 import json
 import os
 import sys
+import threading
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import backfill  # noqa: E402
 import board_names  # noqa: E402
+import lxmf_inbox  # noqa: E402
 import report  # noqa: E402
 import telemetry_codec  # noqa: E402
 import telemetry_detail_codec  # noqa: E402
@@ -38,7 +41,7 @@ ANNOUNCE_INTERVAL_S = 600
 
 
 class Gateway:
-    def __init__(self, identity_path, rnsconfig, broker, port, announce_interval, name):
+    def __init__(self, identity_path, rnsconfig, broker, port, announce_interval, name, propagation_nodes=()):
         import RNS
         import paho.mqtt.client as mqtt
 
@@ -93,6 +96,15 @@ class Gateway:
         # reconnects, so a broker restart loses nothing retained.
         self.mqtt.connect_async(broker, port)
         self.mqtt.loop_start()
+
+        # T2: reports boards kept while no gateway was in reach, collected from
+        # the propagation nodes as LXMF batches (lxmf_inbox.py, backfill.py).
+        # After MQTT, so a delivery always has a client to publish through.
+        import LXMF
+        self.inbox = lxmf_inbox.Inbox(RNS, LXMF, self.identity, os.path.join(folder, "lxmf"), name,
+                                      self._batch, log=lambda line: print(line, flush=True),
+                                      always=propagation_nodes)
+        threading.Thread(target=self.inbox.sync_forever, daemon=True, name="lxmf-inbox").start()
 
     def _identity(self, path):
         path = os.path.expanduser(path)
@@ -151,6 +163,22 @@ class Gateway:
               % (message["sender"], message["firmware"]["hash"], message["firmware"]["env"],
                  len(message["interfaces"]), len(message["neighbours"])), flush=True)
 
+    def _batch(self, content, collected_at, signer):
+        out, refused = backfill.messages(content, collected_at, gateway=self.name,
+                                         name_for=self.name_for, signer=signer)
+        if refused:
+            self.refused += 1
+            print("[gateway] refused a batch: %s" % refused, flush=True)
+            return
+        for topic, message in out:
+            # Not retained: the live topic keeps the board's current state.
+            self.mqtt.publish(topic, json.dumps(message), qos=1, retain=False)
+        if out:
+            first, last = out[0][1]["received_at"], out[-1][1]["received_at"]
+            print("[gateway] %08x backfill: %d report(s), %s to %s"
+                  % (signer, len(out), time.strftime("%m-%d %H:%M", time.localtime(first)),
+                     time.strftime("%m-%d %H:%M", time.localtime(last))), flush=True)
+
     def announce(self):
         self.destination.announce(app_data=self.name.encode("utf-8"))
 
@@ -176,11 +204,20 @@ def main():
     parser.add_argument("--port", type=int, default=1883)
     parser.add_argument("--announce-interval", type=int, default=ANNOUNCE_INTERVAL_S)
     parser.add_argument("--name", default="gateway", help="announced with the destination")
+    parser.add_argument("--propagation-node", action="append", default=[], metavar="HASH",
+                        help="an LXMF propagation node to collect batches from even unheard (repeatable); "
+                             "nodes heard announcing are visited anyway")
     args = parser.parse_args()
     if args.announce_interval <= 0:
         sys.exit("--announce-interval must be a positive number of seconds")
+    try:
+        nodes = [bytes.fromhex(h) for h in args.propagation_node]
+    except ValueError:
+        sys.exit("--propagation-node takes a destination hash in hex")
+    if any(len(n) != 16 for n in nodes):
+        sys.exit("--propagation-node takes a 16-byte destination hash (32 hex digits)")
     gateway = Gateway(args.identity, args.rnsconfig, args.broker, args.port,
-                      args.announce_interval, args.name)
+                      args.announce_interval, args.name, propagation_nodes=nodes)
     try:
         gateway.serve_forever()
     except KeyboardInterrupt:
