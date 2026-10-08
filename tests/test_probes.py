@@ -36,14 +36,16 @@ class Probes(unittest.TestCase):
     def test_an_older_targets_file_still_loads(self):
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "targets.json")
-            open(path, "w").write('{"0a0b0c0d": "%s"}' % ("aa" * 16))
+            with open(path, "w") as f:
+                f.write('{"0a0b0c0d": "%s"}' % ("aa" * 16))
             self.assertEqual(probes.ProbeBook(path).targets, {"0a0b0c0d": {"node": "aa" * 16, "key": None}})
 
     def test_a_corrupt_targets_file_starts_empty(self):
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "targets.json")
             for text in ("{not json", "[]", "null"):
-                open(path, "w").write(text)
+                with open(path, "w") as f:
+                    f.write(text)
                 self.assertEqual(probes.ProbeBook(path).targets, {})
 
     def test_messages_count_and_say_what_happened(self):
@@ -55,6 +57,19 @@ class Probes(unittest.TestCase):
         self.assertEqual((lost["sent_total"], lost["delivered_total"]), (2, 1))
         self.assertIsNone(lost["rtt_s"])      # no round-trip time without a proof
         self.assertFalse(lost["delivered"])
+
+
+    def test_the_counts_hold_under_concurrent_results(self):
+        import threading
+        book = probes.ProbeBook()
+        workers = [threading.Thread(target=lambda: [book.result("0a0b0c0d", 0.0, i % 2 == 0) for i in range(500)])
+                   for _ in range(8)]
+        for w in workers:
+            w.start()
+        for w in workers:
+            w.join()
+        last = book.result("0a0b0c0d", 0.0, True)
+        self.assertEqual((last["sent_total"], last["delivered_total"]), (4001, 2001))
 
 
 if __name__ == "__main__":

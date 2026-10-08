@@ -31,7 +31,7 @@ var probeRequired = []string{"v", "sender", "at", "delivered", "sent_total", "de
 
 func validateProbe(payload []byte) (Probe, error) {
 	var p Probe
-	if _, err := fieldsOf(payload, "probe", probeRequired, []string{"rtt_s", "hops", "via"}); err != nil {
+	if _, err := fieldsOf(payload, "probe", probeRequired, []string{"name", "rtt_s", "hops", "via", "gateway"}); err != nil {
 		return p, err
 	}
 	if err := json.Unmarshal(payload, &p); err != nil {

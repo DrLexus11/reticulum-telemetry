@@ -216,14 +216,18 @@ class Gateway:
 
     def _probe_forever(self):
         time.sleep(60)   # let paths form after start
+        next_pass = time.time()
         while True:
-            for sender, target in list(self.probe_book.targets.items()):
+            for sender, target in self.probe_book.snapshot():
                 try:
                     self._probe(sender, target)
                 except Exception as error:                      # noqa: BLE001
                     print("[probe] %s: %s" % (sender, error), flush=True)
                 time.sleep(2)   # one board at a time: no burst on a shared channel
-            time.sleep(probes.PROBE_INTERVAL_S)
+            # Each pass starts an interval after the last one started, however
+            # many boards there are.
+            next_pass += probes.PROBE_INTERVAL_S
+            time.sleep(max(0.0, next_pass - time.time()))
 
     def _probe(self, sender, target):
         RNS = self.rns

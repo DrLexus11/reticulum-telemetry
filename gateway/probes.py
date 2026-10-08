@@ -26,6 +26,7 @@ telemetry_gateway.py sends.
 import json
 import os
 import tempfile
+import threading
 
 PROBE_INTERVAL_S = 300
 PROBE_TIMEOUT_S = 60     # a two-hop LoRa round trip takes seconds; a minute is generous
@@ -52,6 +53,9 @@ class ProbeBook:
         self.targets = {}   # sender hex -> {"node": destination hash hex, "key": public key hex}
         self.sent = {}
         self.delivered = {}
+        # Announces arrive on Reticulum's threads, results on its receipt
+        # callbacks, and the probe loop reads the targets: one lock for all.
+        self._lock = threading.Lock()
         if self.path and os.path.exists(self.path):
             try:
                 with open(self.path) as f:
@@ -68,17 +72,25 @@ class ProbeBook:
     def heard(self, sender_hex, node_hash_hex, public_key_hex=None):
         """A board's NomadNet node announced. True if the target is new or changed."""
         entry = {"node": node_hash_hex, "key": public_key_hex}
-        if self.targets.get(sender_hex) == entry:
-            return False
-        self.targets[sender_hex] = entry
-        self._save()
+        with self._lock:
+            if self.targets.get(sender_hex) == entry:
+                return False
+            self.targets[sender_hex] = entry
+            self._save()
         return True
+
+    def snapshot(self):
+        """The targets as a list of (sender, target), safe to iterate."""
+        with self._lock:
+            return [(k, dict(v)) for k, v in self.targets.items()]
 
     def result(self, sender_hex, at, delivered, rtt_s=None, hops=None, via=None, name=None, gateway=None):
         """Count one probe and return its message."""
-        self.sent[sender_hex] = self.sent.get(sender_hex, 0) + 1
-        if delivered:
-            self.delivered[sender_hex] = self.delivered.get(sender_hex, 0) + 1
+        with self._lock:
+            self.sent[sender_hex] = self.sent.get(sender_hex, 0) + 1
+            if delivered:
+                self.delivered[sender_hex] = self.delivered.get(sender_hex, 0) + 1
+            sent, received = self.sent[sender_hex], self.delivered.get(sender_hex, 0)
         return {
             "v": 1,
             "sender": sender_hex,
@@ -89,8 +101,8 @@ class ProbeBook:
             "hops": hops,
             "via": via,
             "gateway": gateway,
-            "sent_total": self.sent[sender_hex],
-            "delivered_total": self.delivered.get(sender_hex, 0),
+            "sent_total": sent,
+            "delivered_total": received,
         }
 
     def _save(self):
