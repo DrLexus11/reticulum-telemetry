@@ -61,11 +61,14 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set in .env}
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      # Our own topology panel (deploy/grafana/plugins), unsigned by design.
+      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: drlexus11-meshtopology-panel
     volumes:
       - ./grafana-datasources:/etc/grafana/provisioning/datasources:ro
       - ../grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
       - ../grafana/provisioning/alerting:/etc/grafana/provisioning/alerting:ro
       - ../grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ../grafana/plugins/drlexus11-meshtopology-panel:/var/lib/grafana/plugins/drlexus11-meshtopology-panel:ro
       - grafana:/var/lib/grafana
     depends_on: [prometheus]
 

@@ -198,25 +198,24 @@ def who_hears_whom(x, y, w, h):
 
 
 def topology(x, y, w, h):
-    edges = ('label_join(time() - max by (sender, neighbour, interface) (mesh_link_heard_timestamp_seconds),'
-             ' "id", "-", "sender", "neighbour", "interface")')
+    """The mesh map: the drlexus11-meshtopology-panel plugin (deploy/grafana/plugins),
+    drawn like Crosstalk's network view. The refIds are the plugin's contract."""
     return {
-        "id": next(_ids), "type": "nodeGraph", "title": "Topology -- one-hop links",
-        "description": "Every node a board reports hearing, and the boards themselves. An arrow runs from "
-                       "the board that heard to the node it heard; its figure is seconds since.",
+        "id": next(_ids), "type": "drlexus11-meshtopology-panel", "title": "Topology -- who hears whom",
+        "description": "Boards (server icons) and the nodes they hear directly (person icons). A ring's "
+                       "colour is how recently the board reported, or the node was heard; a link's colour "
+                       "is its carrier, an arrow means only one side hears the other. Hover for details.",
         "datasource": DS, "gridPos": {"x": x, "y": y, "w": w, "h": h},
-        "targets": [target("max by (node, name) (mesh_node_info)", "A", instant=True, table=True),
-                    target(edges, "B", instant=True, table=True)],
-        "transformations": [
-            {"id": "organize", "options": {
-                "excludeByName": {"Time": True, "Value #A": True},
-                "renameByName": {"node": "id", "name": "title", "sender": "source", "neighbour": "target",
-                                 "interface": "secondarystat", "Value #B": "mainstat"}}},
+        "targets": [
+            target("max by (node, name) (mesh_node_info)", "A", instant=True, table=True),
+            target("time() - max by (sender, neighbour, interface) (mesh_link_heard_timestamp_seconds)", "B",
+                   instant=True, table=True),
+            target("max by (sender, neighbour, interface) (mesh_link_rssi_dbm)", "C", instant=True, table=True),
+            target("time() - max by (sender) (mesh_board_report_received_timestamp_seconds)", "D",
+                   instant=True, table=True),
+            target("max by (sender, name) (mesh_board_info)", "E", instant=True, table=True),
         ],
-        "fieldConfig": {"defaults": {}, "overrides": [
-            {"matcher": {"id": "byName", "options": "mainstat"},
-             "properties": [{"id": "unit", "value": "s"}, {"id": "decimals", "value": 0}]}]},
-        "options": {"nodes": {}, "edges": {}},
+        "options": {"edgeLabels": True},
     }
 
 
@@ -329,29 +328,29 @@ def build():
     # The detail report (every 30 min): who hears whom, the stores, the carriers.
     y = 50
     panels += [
-        who_hears_whom(0, y, 12, 12),
-        topology(12, y, 12, 12),
-        links_table(0, y + 12, 24, 8),
-        named_table("Propagation nodes -- LXMF stores", PN_COLUMNS, 0, y + 20, 12, 7,
+        topology(0, y, 24, 16),
+        who_hears_whom(0, y + 16, 12, 12),
+        links_table(12, y + 16, 12, 12),
+        named_table("Propagation nodes -- LXMF stores", PN_COLUMNS, 0, y + 28, 12, 7,
                     description="Boards running a propagation node. Sync counts are since the board booted."),
-        named_table("Radio and carriers", RADIO_COLUMNS, 12, y + 20, 12, 7),
+        named_table("Radio and carriers", RADIO_COLUMNS, 12, y + 28, 12, 7),
         timeseries("Received, by carrier",
                    "sum by (sender, interface) (rate(mesh_board_interface_rx_bytes_total[1h]))"
                    " * on(sender) group_left(name) max by (sender, name) (mesh_board_info)",
-                   y + 27, 0, 12, "Bps", legend="{{name}} {{interface}}",
+                   y + 35, 0, 12, "Bps", legend="{{name}} {{interface}}",
                    description="Hourly average from cumulative byte counters; a restart reads as a reset"),
         timeseries("Sent, by carrier",
                    "sum by (sender, interface) (rate(mesh_board_interface_tx_bytes_total[1h]))"
                    " * on(sender) group_left(name) max by (sender, name) (mesh_board_info)",
-                   y + 27, 12, 12, "Bps", legend="{{name}} {{interface}}"),
+                   y + 35, 12, 12, "Bps", legend="{{name}} {{interface}}"),
         timeseries("LoRa channel use", "max by (sender) (mesh_board_radio_channel_utilisation_percent)" + NAMED,
-                   y + 35, 0, 12, "percent"),
+                   y + 43, 0, 12, "percent"),
         timeseries("LoRa noise floor", "max by (sender) (mesh_board_radio_noise_floor_dbm)" + NAMED,
-                   y + 35, 12, 12, "dBm"),
+                   y + 43, 12, 12, "dBm"),
     ]
     return {
         "uid": "mesh-boards", "title": "Mesh boards", "tags": ["mesh", "telemetry"],
-        "timezone": "browser", "refresh": "30s", "schemaVersion": 39, "version": 3,
+        "timezone": "browser", "refresh": "30s", "schemaVersion": 39, "version": 4,
         "time": {"from": "now-24h", "to": "now"}, "panels": panels,
     }
 

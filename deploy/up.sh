@@ -42,6 +42,8 @@ run rt-grafana --network host --user "$(id -u):$(id -g)" --userns keep-id \
   -e GF_ANALYTICS_REPORTING_ENABLED=false -e GF_ANALYTICS_CHECK_FOR_UPDATES=false \
   -v "$here/grafana/provisioning:/etc/grafana/provisioning:ro,Z" \
   -v "$here/grafana/dashboards:/var/lib/grafana/dashboards:ro,Z" \
+  -v "$here/grafana/plugins/drlexus11-meshtopology-panel:/var/lib/grafana/plugins/drlexus11-meshtopology-panel:ro,Z" \
+  -e GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=drlexus11-meshtopology-panel \
   -v "$data/grafana:/var/lib/grafana/data:Z" \
   -e GF_PATHS_DATA=/var/lib/grafana/data \
   docker.io/grafana/grafana-oss:latest
