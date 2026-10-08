@@ -8,11 +8,16 @@ message waits in the board's own propagation node. This inbox collects from
 every propagation node it hears, one at a time, and hands each batch on with
 the sender id of the identity that signed it.
 
-A batch whose signature LXMF could not validate is dropped: the signer is what
-stops one node writing another's history. The board's identity is known to the
-gateway from its announces (its NomadNet node announces hourly).
+A batch whose signature is invalid is dropped: the signer is what stops one
+node writing another's history. A batch whose signer is not yet known -- its
+delivery announce lost in the very partition the batch covers -- is kept with
+its signed bytes; the gateway asks for a path to the signer, which prompts its
+announce, and checks again on every pass, for as long as Prometheus would still
+accept the reports (48 h).
 """
 
+import json
+import os
 import threading
 import time
 
@@ -20,10 +25,17 @@ SYNC_INTERVAL_S = 600      # one pass over the propagation nodes heard
 SYNC_SOON_S = 30           # after a node is newly heard: a vehicle back in range
 PN_FORGET_S = 2 * 3600     # a propagation node unheard this long is not visited
 TRANSFER_TIMEOUT_S = 180   # per node: a LoRa path, a link and a resource take time
+UNVERIFIED_KEEP_S = 48 * 3600   # Prometheus's out-of-order window: older is useless
+# Kept before anyone is authenticated, so bounded: anyone can make identities.
+# Two days of hourly batches per signer; the whole queue a few MB at most.
+UNVERIFIED_MAX_PER_SIGNER = 48
+UNVERIFIED_MAX_FILES = 500
+UNVERIFIED_MAX_BYTES = 4 * 1024 * 1024
 
 
 class Inbox:
-    def __init__(self, rns, lxmf, identity, storagepath, display_name, on_batch, log=print, always=()):
+    def __init__(self, rns, lxmf, identity, storagepath, display_name, on_batch, log=print, always=(),
+                 unverified_dir=None):
         self.rns = rns
         self.lxmf = lxmf
         self.identity = identity
@@ -41,6 +53,8 @@ class Inbox:
         self._always = [bytes(h) for h in always]
         self.collected = 0
         self.dropped = 0
+        self.unverified_dir = os.path.expanduser(unverified_dir or os.path.join(storagepath, "unverified"))
+        os.makedirs(self.unverified_dir, exist_ok=True)
         inbox = self
 
         class _PropagationAnnounces:
@@ -59,16 +73,19 @@ class Inbox:
 
         rns.Transport.register_announce_handler(_PropagationAnnounces())
 
-    def _delivered(self, message):
+    def _delivered(self, message, collected_at=None):
+        collected_at = time.time() if collected_at is None else collected_at
         content = message.content if isinstance(message.content, (bytes, bytearray)) else b""
+        source = self.rns.hexrep(message.source_hash, delimit=False)
         if not content or content[0] != 0x31:
-            self.log("[inbox] ignored a message from <%s>: not a telemetry batch"
-                     % self.rns.hexrep(message.source_hash, delimit=False)[:16])
+            self.log("[inbox] ignored a message from <%s>: not a telemetry batch" % source[:16])
             return
         if not message.signature_validated:
+            if message.unverified_reason == self.lxmf.LXMessage.SOURCE_UNKNOWN and message.packed:
+                self._keep_unverified(message, collected_at)
+                return
             self.dropped += 1
-            self.log("[inbox] dropped a batch from <%s>: signature not validated (%s)"
-                     % (self.rns.hexrep(message.source_hash, delimit=False)[:16], message.unverified_reason))
+            self.log("[inbox] dropped a batch from <%s>: signature invalid" % source[:16])
             return
         signer_identity = self.rns.Identity.recall(message.source_hash)
         if signer_identity is None:
@@ -77,7 +94,74 @@ class Inbox:
             return
         signer = int.from_bytes(signer_identity.hash[:4], "big")
         self.collected += 1
-        self.on_batch(bytes(content), time.time(), signer)
+        self.on_batch(bytes(content), collected_at, signer)
+
+    def _keep_unverified(self, message, collected_at):
+        source = self.rns.hexrep(message.source_hash, delimit=False)
+        name = "%.6f-%s-%s.json" % (collected_at, source[:16], self.rns.hexrep(message.hash, delimit=False)[:16])
+        files = [n for n in os.listdir(self.unverified_dir) if n.endswith(".json")]
+        if any(n.endswith("-%s.json" % name.rsplit("-", 1)[1][:-5]) for n in files):
+            return   # already kept
+        size = sum(os.path.getsize(os.path.join(self.unverified_dir, n)) for n in files)
+        from_signer = sum(1 for n in files if n.split("-")[1] == source[:16])
+        if (from_signer >= UNVERIFIED_MAX_PER_SIGNER or len(files) >= UNVERIFIED_MAX_FILES
+                or size >= UNVERIFIED_MAX_BYTES):
+            self.dropped += 1
+            self.log("[inbox] batch from <%s> refused: the unverified queue is full" % source[:16])
+            return
+        record = {"packed": bytes(message.packed).hex(), "collected_at": collected_at}
+        path = os.path.join(self.unverified_dir, name)
+        with open(path + ".tmp", "w") as f:
+            json.dump(record, f)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(path + ".tmp", path)
+        dir_fd = os.open(self.unverified_dir, os.O_RDONLY)   # the rename, durable too
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+        self.rns.Transport.request_path(message.source_hash)   # prompts the signer's announce
+        self.log("[inbox] batch from <%s> kept until its signer is known" % source[:16])
+
+    def retry_unverified(self, now=None):
+        """Check kept batches again; those now verifiable go on, those too old
+        for Prometheus are dropped."""
+        now = time.time() if now is None else now
+        asked = set()
+        for name in sorted(os.listdir(self.unverified_dir)):
+            if not name.endswith(".json"):
+                continue
+            path = os.path.join(self.unverified_dir, name)
+            try:
+                with open(path) as f:
+                    record = json.load(f)
+                message = self.lxmf.LXMessage.unpack_from_bytes(bytes.fromhex(record["packed"]))
+            except Exception as error:                      # noqa: BLE001
+                self.log("[inbox] %s unreadable, dropped: %s" % (name, error))
+                os.remove(path)
+                continue
+            if message.signature_validated:
+                # Removed only once the batch is safely spooled: a failed
+                # hand-off leaves it here for the next pass.
+                try:
+                    self._delivered(message, collected_at=record["collected_at"])
+                except Exception as error:                  # noqa: BLE001
+                    self.log("[inbox] %s: hand-off failed, kept: %s" % (name, error))
+                    continue
+                os.remove(path)
+            elif message.unverified_reason != self.lxmf.LXMessage.SOURCE_UNKNOWN:
+                self.dropped += 1
+                self.log("[inbox] %s: signature invalid, dropped" % name)
+                os.remove(path)
+            elif now - record["collected_at"] > UNVERIFIED_KEEP_S:
+                self.dropped += 1
+                self.log("[inbox] %s: signer still unknown after 48 h, dropped" % name)
+                os.remove(path)
+            else:
+                asked.add(bytes(message.source_hash))
+        for source in asked:   # once per signer, not once per batch
+            self.rns.Transport.request_path(source)
 
     def propagation_nodes(self, now=None):
         now = time.time() if now is None else now
@@ -105,6 +189,10 @@ class Inbox:
             if self._new_node.wait(timeout=interval):
                 self._new_node.clear()
                 time.sleep(SYNC_SOON_S)   # let its path and the announce settle
+            try:
+                self.retry_unverified()
+            except Exception as error:                      # noqa: BLE001
+                self.log("[inbox] retrying unverified batches failed: %s" % error)
             for node in self.propagation_nodes():
                 try:
                     state = self.sync_one(node)

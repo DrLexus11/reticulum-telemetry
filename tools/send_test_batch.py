@@ -38,6 +38,11 @@ def main():
     parser.add_argument("--gateway", required=True, help="the gateway's uplink destination hash")
     parser.add_argument("--propagation-node", required=True, help="where to deposit the batch")
     parser.add_argument("--rnsconfig", default=None)
+    parser.add_argument("--no-announce", action="store_true",
+                        help="do not announce first: the gateway must keep the batch until the signer is "
+                             "known, and learns it by a path request this process answers")
+    parser.add_argument("--stay", type=int, default=0, metavar="SECONDS",
+                        help="keep running afterwards, to answer the gateway's path request")
     args = parser.parse_args()
 
     import LXMF
@@ -48,8 +53,10 @@ def main():
     identity = RNS.Identity()
     router = LXMF.LXMRouter(identity=identity, storagepath=store)
     source = router.register_delivery_identity(identity, display_name="T2 test sender")
-    # The gateway validates the signature, so it must know this identity.
-    router.announce(source.hash)
+    # The gateway validates the signature, so it must know this identity --
+    # from this announce, or (--no-announce) from the path request it sends.
+    if not args.no_announce:
+        router.announce(source.hash)
 
     uplink = bytes.fromhex(args.gateway)
     if not RNS.Transport.has_path(uplink):
@@ -78,7 +85,10 @@ def main():
     if message.state == LXMF.LXMessage.FAILED:
         sys.exit("deposit failed")
     print("deposited at the propagation node; the gateway should publish "
-          "mesh/telemetry/%08x/backfill on its next pass" % sender)
+          "mesh/telemetry/%08x/backfill on its next pass" % sender, flush=True)
+    if args.stay:
+        print("staying %d s to answer path requests" % args.stay, flush=True)
+        time.sleep(args.stay)
 
 
 if __name__ == "__main__":
