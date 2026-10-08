@@ -72,6 +72,20 @@ class DetailMessage(unittest.TestCase):
         message = report.detail_to_message(dc.new_detail(fw_version=0x0156), 1.0)
         self.assertEqual(message["firmware"]["version"], "1.86")
 
+    def test_the_system_section_reads_as_values_or_null(self):
+        full = next(c for c in FIXTURE["encode"] if c["name"] == "rad_full_with_system")
+        m = report.detail_to_message(dc.decode(bytes.fromhex(full["hex"])), 1.0)
+        self.assertEqual(m["system"], {"temperature_c": 47, "lora_rx_packets": 15982, "lora_tx_packets": 9120,
+                                       "lora_crc_errors": 13, "clock_source": "signed_beacon",
+                                       "clock_age_s": 1020, "ifac_rejected": 2})
+        unknowns = next(c for c in FIXTURE["encode"] if c["name"] == "system_unknowns")
+        m = report.detail_to_message(dc.decode(bytes.fromhex(unknowns["hex"])), 1.0)
+        self.assertEqual(m["system"], {"temperature_c": None, "lora_rx_packets": 0, "lora_tx_packets": 0,
+                                       "lora_crc_errors": None, "clock_source": None, "clock_age_s": None,
+                                       "ifac_rejected": None})
+        older = next(c for c in FIXTURE["encode"] if c["name"] == "rad_full")
+        self.assertIsNone(report.detail_to_message(dc.decode(bytes.fromhex(older["hex"])), 1.0)["system"])
+
     def test_the_detail_topic_sits_under_the_board(self):
         self.assertEqual(report.detail_topic(0x0a0b0c0d), "mesh/telemetry/0a0b0c0d/detail")
 

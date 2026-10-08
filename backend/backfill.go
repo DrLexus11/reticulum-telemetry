@@ -178,6 +178,23 @@ func detailSamples(d Detail, quality string) []sample {
 			boardSample("pn_syncs_ok_total", s, quality, p.SyncOK, ms),
 			boardSample("pn_syncs_failed_total", s, quality, p.SyncFailed, ms))
 	}
+	if y := d.System; y != nil {
+		out = append(out,
+			boardSample("lora_rx_packets_total", s, quality, y.LoraRx, ms),
+			boardSample("lora_tx_packets_total", s, quality, y.LoraTx, ms))
+		for _, opt := range []struct {
+			name string
+			v    *float64
+		}{{"temperature_celsius", y.TemperatureC}, {"lora_crc_errors_total", y.LoraCRC},
+			{"clock_age_seconds", y.ClockAge}, {"ifac_rejected_total", y.IFAC}} {
+			if opt.v != nil {
+				out = append(out, boardSample(opt.name, s, quality, *opt.v, ms))
+			}
+		}
+		if y.ClockSource != nil {
+			out = append(out, boardSample("clock_info", s, quality, 1, ms, "source", *y.ClockSource))
+		}
+	}
 	senderName := s
 	if d.Name != nil && *d.Name != "" {
 		senderName = *d.Name
