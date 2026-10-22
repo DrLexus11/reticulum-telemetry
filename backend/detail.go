@@ -61,6 +61,23 @@ type Detail struct {
 		ClockAge     *float64 `json:"clock_age_s"`
 		IFAC         *float64 `json:"ifac_rejected"`
 	} `json:"system"`
+	// Optional (firmware 2026-10-22): how the LoRa radio is set, and each
+	// interface's measured route cost.
+	RadioConfig *struct {
+		FrequencyHz float64 `json:"frequency_hz"`
+		BandwidthHz float64 `json:"bandwidth_hz"`
+		SF          float64 `json:"spreading_factor"`
+		CR          float64 `json:"coding_rate"`
+		TxPowerDbm  float64 `json:"tx_power_dbm"`
+		Preset      string  `json:"preset"`
+	} `json:"radio_config"`
+	Routes []struct {
+		Interface    string   `json:"interface"`
+		CostS        *float64 `json:"cost_s"`
+		RttS         *float64 `json:"rtt_s"`
+		FailureRatio float64  `json:"failure_ratio"`
+		OperatorCost bool     `json:"operator_cost"`
+	} `json:"routes"`
 }
 
 // A link's labels: who heard whom over what, and both ends' names (the id
@@ -84,6 +101,9 @@ var (
 	neighbourNullable = []string{"name", "rssi_dbm"}
 	systemRequired    = []string{"lora_rx_packets", "lora_tx_packets"}
 	systemNullable    = []string{"temperature_c", "lora_crc_errors", "clock_source", "clock_age_s", "ifac_rejected"}
+	radioConfRequired = []string{"frequency_hz", "bandwidth_hz", "spreading_factor", "coding_rate", "tx_power_dbm", "preset"}
+	routeRequired     = []string{"interface", "failure_ratio", "operator_cost"}
+	routeNullable     = []string{"cost_s", "rtt_s"}
 )
 
 var hashPattern = regexp.MustCompile(`^[0-9a-f]{8}$`)
@@ -155,6 +175,16 @@ func validateDetail(payload []byte) (Detail, error) {
 			return d, err
 		}
 	}
+	if raw, ok := fields["radio_config"]; ok && string(raw) != "null" {
+		if _, err := fieldsOf(raw, "radio_config", radioConfRequired, nil); err != nil {
+			return d, err
+		}
+	}
+	if raw, ok := fields["routes"]; ok && string(raw) != "null" {
+		if err := listOf(raw, "routes", routeRequired, routeNullable); err != nil {
+			return d, err
+		}
+	}
 	if string(fields["propagation"]) != "null" {
 		if _, err := fieldsOf(fields["propagation"], "propagation", storeRequired, storeNullable); err != nil {
 			return d, err
@@ -197,6 +227,18 @@ func validateDetail(payload []byte) (Detail, error) {
 			return d, fmt.Errorf("negative system count")
 		}
 	}
+	if c := d.RadioConfig; c != nil {
+		if c.FrequencyHz <= 0 || c.BandwidthHz <= 0 || c.SF < 5 || c.SF > 12 || c.CR < 5 || c.CR > 8 ||
+			c.TxPowerDbm < -20 || c.TxPowerDbm > 30 || c.Preset == "" {
+			return d, fmt.Errorf("radio settings out of range")
+		}
+	}
+	for _, r := range d.Routes {
+		if r.Interface == "" || r.FailureRatio < 0 || r.FailureRatio > 1 ||
+			(r.CostS != nil && *r.CostS < 0) || (r.RttS != nil && *r.RttS < 0) {
+			return d, fmt.Errorf("route %q: unnamed, or out of range", r.Interface)
+		}
+	}
 	for _, n := range d.Neighbours {
 		if !senderPattern.MatchString(n.Node) {
 			return d, fmt.Errorf("neighbour %q is not 8 lower-case hex digits", n.Node)
@@ -220,6 +262,9 @@ type DetailMetrics struct {
 	temperature, loraRx, loraTx, loraCRC, clockAge    *prometheus.GaugeVec
 	clockInfo, ifacRejected                           *prometheus.GaugeVec
 	linkHeard, linkRSSI                               *prometheus.GaugeVec
+	radioFreq, radioBW, radioSF, radioCR, radioTxp    *prometheus.GaugeVec
+	radioSettings                                     *prometheus.GaugeVec
+	routeCost, routeRTT, routeFail, routeOperator     *prometheus.GaugeVec
 	// nodeInfo names every node the mesh reports, boards and the phones they
 	// hear alike: mesh_node_info{node, name}. One series per node.
 	nodeInfo *prometheus.GaugeVec
@@ -230,6 +275,8 @@ type DetailMetrics struct {
 	ifsOf      map[string][]string
 	linksOf    map[string][][]string
 	nodeName   map[string]string
+	settingsOf map[string][]string
+	routesOf   map[string][]string
 }
 
 func nodeGauge(reg prometheus.Registerer, subsystem, name, help string, labels ...string) *prometheus.GaugeVec {
@@ -268,7 +315,19 @@ func NewDetailMetrics(reg prometheus.Registerer) *DetailMetrics {
 			"When `sender` last heard `neighbour` directly, over `interface`: who sees whom.", linkLabels...),
 		linkRSSI: nodeGauge(reg, "link", "rssi_dbm",
 			"RSSI at which `sender` last heard `neighbour`, where the carrier measures one.", linkLabels...),
-		nodeInfo: nodeGauge(reg, "node", "info", "1, labelled with the node's announced name -- its id until one is heard.", "node", "name"),
+		nodeInfo:  nodeGauge(reg, "node", "info", "1, labelled with the node's announced name -- its id until one is heard.", "node", "name"),
+		radioFreq: gauge(reg, "radio_frequency_hz", "The LoRa frequency the board is set to."),
+		radioBW:   gauge(reg, "radio_bandwidth_hz", "The LoRa bandwidth the board is set to."),
+		radioSF:   gauge(reg, "radio_spreading_factor", "The LoRa spreading factor the board is set to."),
+		radioCR:   gauge(reg, "radio_coding_rate", "The LoRa coding rate the board is set to, as 4/n: n."),
+		radioTxp:  gauge(reg, "radio_tx_power_dbm", "The LoRa transmit power the board is set to."),
+		radioSettings: gauge(reg, "radio_settings_info",
+			"1, labelled with the board's LoRa settings: boards whose labels differ cannot hear each other.",
+			"preset", "frequency_mhz", "bandwidth_khz", "sf", "cr"),
+		routeCost:     gauge(reg, "route_cost_seconds", "What a route over the interface costs, as the board measures it; absent when down or never answered.", "interface"),
+		routeRTT:      gauge(reg, "route_rtt_seconds", "The interface's fastest recent round trip; absent when unknown.", "interface"),
+		routeFail:     gauge(reg, "route_failure_ratio", "The interface's recent failure rate, 0..1.", "interface"),
+		routeOperator: gauge(reg, "route_operator_cost", "1 if an operator set the interface's route cost.", "interface"),
 		refused: func() prometheus.Counter {
 			c := prometheus.NewCounter(prometheus.CounterOpts{Namespace: "mesh", Name: "detail_reports_refused_total",
 				Help: "Messages on the detail topics that were not a version 1 detail report."})
@@ -279,6 +338,8 @@ func NewDetailMetrics(reg prometheus.Registerer) *DetailMetrics {
 		ifsOf:      map[string][]string{},
 		linksOf:    map[string][][]string{},
 		nodeName:   map[string]string{},
+		settingsOf: map[string][]string{},
+		routesOf:   map[string][]string{},
 	}
 }
 
@@ -380,6 +441,44 @@ func (m *DetailMetrics) Apply(payload []byte) error {
 		}
 	}
 
+	if previous, ok := m.settingsOf[s]; ok {
+		m.radioSettings.DeleteLabelValues(previous...)
+		delete(m.settingsOf, s)
+	}
+	if c := d.RadioConfig; c != nil {
+		m.radioFreq.WithLabelValues(s).Set(c.FrequencyHz)
+		m.radioBW.WithLabelValues(s).Set(c.BandwidthHz)
+		m.radioSF.WithLabelValues(s).Set(c.SF)
+		m.radioCR.WithLabelValues(s).Set(c.CR)
+		m.radioTxp.WithLabelValues(s).Set(c.TxPowerDbm)
+		labels := append([]string{s}, radioSettingsLabels(c.Preset, c.FrequencyHz, c.BandwidthHz, c.SF, c.CR)...)
+		m.radioSettings.WithLabelValues(labels...).Set(1)
+		m.settingsOf[s] = labels
+	} else {
+		for _, g := range []*prometheus.GaugeVec{m.radioFreq, m.radioBW, m.radioSF, m.radioCR, m.radioTxp} {
+			g.DeleteLabelValues(s)
+		}
+	}
+	// Routes are replaced whole, as interfaces are.
+	for _, kind := range m.routesOf[s] {
+		for _, g := range []*prometheus.GaugeVec{m.routeCost, m.routeRTT, m.routeFail, m.routeOperator} {
+			g.DeleteLabelValues(s, kind)
+		}
+	}
+	var routeKinds []string
+	for _, r := range d.Routes {
+		routeKinds = append(routeKinds, r.Interface)
+		if r.CostS != nil {
+			m.routeCost.WithLabelValues(s, r.Interface).Set(*r.CostS)
+		}
+		if r.RttS != nil {
+			m.routeRTT.WithLabelValues(s, r.Interface).Set(*r.RttS)
+		}
+		m.routeFail.WithLabelValues(s, r.Interface).Set(r.FailureRatio)
+		m.routeOperator.WithLabelValues(s, r.Interface).Set(boolf(r.OperatorCost))
+	}
+	m.routesOf[s] = routeKinds
+
 	if d.Name != nil && *d.Name != "" {
 		m.nameNode(s, *d.Name)
 	} else {
@@ -407,6 +506,14 @@ func (m *DetailMetrics) Apply(payload []byte) error {
 	}
 	m.linksOf[s] = links
 	return nil
+}
+
+// radioSettingsLabels: preset, frequency in MHz, bandwidth in kHz, SF, CR --
+// the labels of radio_settings_info, live and backfilled alike. Two boards
+// with different values here cannot hear each other.
+func radioSettingsLabels(preset string, frequencyHz, bandwidthHz, sf, cr float64) []string {
+	return []string{preset, fmt.Sprintf("%.3f", frequencyHz/1e6), fmt.Sprintf("%g", bandwidthHz/1e3),
+		fmt.Sprintf("%g", sf), fmt.Sprintf("%g", cr)}
 }
 
 // knowNode gives a node not yet named an info series under its own id, so

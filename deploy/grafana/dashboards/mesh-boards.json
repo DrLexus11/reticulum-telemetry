@@ -2868,6 +2868,287 @@
           "mode": "multi"
         }
       }
+    },
+    {
+      "id": 26,
+      "type": "stat",
+      "title": "LoRa settings in use",
+      "description": "Distinct frequency / bandwidth / SF / CR combinations among the boards. More than one: some boards cannot hear the others.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 110,
+        "w": 6,
+        "h": 7
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "count(count by (frequency_mhz, bandwidth_khz, sf, cr) (mesh_board_radio_settings_info)) or vector(0)",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 2
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 27,
+      "type": "table",
+      "title": "LoRa settings",
+      "description": "How each board's radio is set, from its detail report (every 30 min). A row whose MHz, kHz, SF or CR differs from the others is a board that hears none of them.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 110,
+        "w": 18,
+        "h": 7
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "(max by (sender, preset, frequency_mhz, bandwidth_khz, sf, cr) (mesh_board_radio_settings_info)) * on(sender) group_left(name) max by (sender, name) (mesh_board_info)",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "B",
+          "expr": "(max by (sender) (mesh_board_radio_tx_power_dbm)) * on(sender) group_left(name) max by (sender, name) (mesh_board_info)",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Time 1": true,
+              "Time 2": true,
+              "sender": true,
+              "Value #A": true
+            },
+            "indexByName": {
+              "name": 0,
+              "preset": 1,
+              "frequency_mhz": 2,
+              "bandwidth_khz": 3,
+              "sf": 4,
+              "cr": 5,
+              "Value #B": 6
+            },
+            "renameByName": {
+              "name": "Board",
+              "preset": "Preset",
+              "frequency_mhz": "MHz",
+              "bandwidth_khz": "kHz",
+              "sf": "SF",
+              "cr": "CR 4/",
+              "Value #B": "TX dBm"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "Board"
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "id": 28,
+      "type": "timeseries",
+      "title": "Route cost, by carrier",
+      "description": "What a route over each carrier costs, as the board measures it: the fastest recent round trip plus the medium's airtime for a transfer (or an operator's cost), raised by failures. Among equal-hop routes the clearly cheaper carrier is used. No line: down, or never answered.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 117,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "max by (sender, interface) (mesh_board_route_cost_seconds) * on(sender) group_left(name) max by (sender, name) (mesh_board_info)",
+          "legendFormat": "{{name}} {{interface}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 2,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 29,
+      "type": "timeseries",
+      "title": "Route failure rate, by carrier",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 117,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "max by (sender, interface) (mesh_board_route_failure_ratio) * on(sender) group_left(name) max by (sender, name) (mesh_board_info)",
+          "legendFormat": "{{name}} {{interface}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "lineWidth": 2,
+            "spanNulls": false,
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.2
+              },
+              {
+                "color": "red",
+                "value": 0.5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
     }
   ],
   "links": [

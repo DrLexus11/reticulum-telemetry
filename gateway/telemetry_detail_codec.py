@@ -1,5 +1,6 @@
 """The board detail report, telemetry wire format 0x21 -- the deck's twin of
-TelemetryDetailCodec.h.
+TelemetryDetailCodec.h. Radio configuration and route costs (2026-10-22)
+append after the system section, so older decoders read the rest unchanged.
 
 The gateway decodes what boards send; the encoder is here so the shared fixture,
 tests/fixtures/telemetry_detail_v1.json, can be generated and checked on both
@@ -20,7 +21,13 @@ FLAG_RADIO = 0x01
 FLAG_PROPAGATION = 0x02
 FLAG_NEIGHBOURS_TRUNCATED = 0x04
 FLAG_SYSTEM = 0x08
+FLAG_RADIO_CONFIG = 0x10
+FLAG_ROUTES = 0x20
 SYSTEM_LEN = 20
+RADIO_CONFIG_LEN = 12
+ROUTE_LEN = 7
+PRESET_CUSTOM = 0xFF
+MS_UNKNOWN = 0xFFFF
 UNKNOWN32 = 0xFFFFFFFF
 TEMP_UNKNOWN = -128
 
@@ -62,6 +69,9 @@ def new_detail(**fields):
         "neighbours": [], "neighbours_truncated": False,
         "system_known": False, "temperature_c": TEMP_UNKNOWN, "lora_rx": 0, "lora_tx": 0,
         "lora_crc_errors": None, "time_source": 0, "time_age_s": None, "ifac_rejected": None,
+        "radio_config_known": False, "frequency_hz": 0, "bandwidth_hz": 0, "sf": 0, "cr": 0,
+        "tx_power_dbm": 0, "preset": None,
+        "routes_known": False, "routes": [],
     }
     d.update(fields)
     return d
@@ -73,8 +83,11 @@ def encode(d, out_len=WIRE_MAX_LEN):
     env = d["env"].encode("utf-8")[:ENV_MAX]
     ifs = d["interfaces"][:MAX_INTERFACES]
     system = d.get("system_known", False)
+    radio_config = d.get("radio_config_known", False)
+    routes = d.get("routes", [])[:MAX_INTERFACES] if d.get("routes_known", False) else None
     fixed = 17 + len(env) + 1 + len(ifs) * 10 + (5 if d["radio_known"] else 0) + \
-        (11 if d["propagation_known"] else 0) + 1 + (SYSTEM_LEN if system else 0)
+        (11 if d["propagation_known"] else 0) + 1 + (SYSTEM_LEN if system else 0) + \
+        (RADIO_CONFIG_LEN if radio_config else 0) + (1 + len(routes) * ROUTE_LEN if routes is not None else 0)
     if fixed > limit:
         return None
     wanted = d["neighbours"][:MAX_NEIGHBOURS]
@@ -90,6 +103,10 @@ def encode(d, out_len=WIRE_MAX_LEN):
         flags |= FLAG_NEIGHBOURS_TRUNCATED
     if system:
         flags |= FLAG_SYSTEM
+    if radio_config:
+        flags |= FLAG_RADIO_CONFIG
+    if routes is not None:
+        flags |= FLAG_ROUTES
 
     out = bytearray(struct.pack(">BBII", WIRE_VERSION, flags, d["sender_id"], d["uptime_s"]))
     out += bytes.fromhex(d["fw_hash"])[:4].ljust(4, b"\0")
@@ -115,6 +132,16 @@ def encode(d, out_len=WIRE_MAX_LEN):
         ifac = UNKNOWN32 if d["ifac_rejected"] is None else _known32(d["ifac_rejected"])
         out += struct.pack(">bIIIBHI", d["temperature_c"], _sat32(d["lora_rx"]), _sat32(d["lora_tx"]), crc,
                            d["time_source"], minutes, ifac)
+    if radio_config:
+        preset = PRESET_CUSTOM if d["preset"] is None else d["preset"]
+        out += struct.pack(">IIBBbB", d["frequency_hz"], d["bandwidth_hz"], d["sf"], d["cr"],
+                           d["tx_power_dbm"], preset)
+    if routes is not None:
+        out.append(len(routes))
+        for r in routes:
+            cost = MS_UNKNOWN if r["cost_ms"] is None else min(r["cost_ms"], MS_UNKNOWN - 1)
+            rtt = MS_UNKNOWN if r["rtt_ms"] is None else min(r["rtt_ms"], MS_UNKNOWN - 1)
+            out += struct.pack(">BHHBB", r["kind"], cost, rtt, _pct(r["fail_pct"]), 1 if r["operator"] else 0)
     return bytes(out)
 
 
@@ -178,4 +205,25 @@ def decode(data):
                  time_age_s=None if minutes == 0xFFFF else minutes * 60,
                  ifac_rejected=None if ifac == UNKNOWN32 else ifac)
         at += SYSTEM_LEN
+    if flags & FLAG_RADIO_CONFIG:
+        if at + RADIO_CONFIG_LEN > len(data):
+            return None
+        freq, bw, sf, cr, txp, preset = struct.unpack_from(">IIBBbB", data, at)
+        d.update(radio_config_known=True, frequency_hz=freq, bandwidth_hz=bw, sf=sf, cr=cr, tx_power_dbm=txp,
+                 preset=None if preset == PRESET_CUSTOM else preset)
+        at += RADIO_CONFIG_LEN
+    if flags & FLAG_ROUTES:
+        if at + 1 > len(data):
+            return None
+        count = data[at]
+        at += 1
+        if count > MAX_INTERFACES or at + count * ROUTE_LEN > len(data):
+            return None
+        d["routes_known"] = True
+        for _ in range(count):
+            kind, cost, rtt, fail, flag = struct.unpack_from(">BHHBB", data, at)
+            d["routes"].append({"kind": kind, "cost_ms": None if cost == MS_UNKNOWN else cost,
+                                "rtt_ms": None if rtt == MS_UNKNOWN else rtt, "fail_pct": fail,
+                                "operator": bool(flag & 1)})
+            at += ROUTE_LEN
     return d

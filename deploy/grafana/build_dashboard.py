@@ -337,6 +337,45 @@ RADIO_COLUMNS = [
 ]
 
 
+# Each board's LoRa settings (firmware 2026-10-22): boards on different
+# frequency, bandwidth, SF or CR cannot hear each other at all.
+SETTINGS = "max by (sender, preset, frequency_mhz, bandwidth_khz, sf, cr) (mesh_board_radio_settings_info)"
+SETTINGS_IN_USE = ("count(count by (frequency_mhz, bandwidth_khz, sf, cr) (mesh_board_radio_settings_info))"
+                   " or vector(0)")
+
+
+def radio_settings(y):
+    """The settings in use (1 is right: every board can hear the others) and a
+    table of each board's settings and transmit power."""
+    in_use = stat("LoRa settings in use", SETTINGS_IN_USE, 0, 6,
+                  steps=thresholds(("blue", None), ("green", 1), ("red", 2)),
+                  description="Distinct frequency / bandwidth / SF / CR combinations among the boards. "
+                              "More than one: some boards cannot hear the others.")
+    in_use["gridPos"] = {"x": 0, "y": y, "w": 6, "h": 7}
+    table = {
+        "id": next(_ids), "type": "table", "title": "LoRa settings",
+        "description": "How each board's radio is set, from its detail report (every 30 min). "
+                       "A row whose MHz, kHz, SF or CR differs from the others is a board that hears none of them.",
+        "datasource": DS, "gridPos": {"x": 6, "y": y, "w": 18, "h": 7},
+        "targets": [target("(%s)%s" % (SETTINGS, NAMED), "A", instant=True, table=True),
+                    target("(max by (sender) (mesh_board_radio_tx_power_dbm))%s" % NAMED, "B",
+                           instant=True, table=True)],
+        "transformations": [
+            {"id": "merge", "options": {}},
+            {"id": "organize", "options": {
+                "excludeByName": {"Time": True, "Time 1": True, "Time 2": True, "sender": True, "Value #A": True},
+                "indexByName": {"name": 0, "preset": 1, "frequency_mhz": 2, "bandwidth_khz": 3, "sf": 4,
+                                "cr": 5, "Value #B": 6},
+                "renameByName": {"name": "Board", "preset": "Preset", "frequency_mhz": "MHz",
+                                 "bandwidth_khz": "kHz", "sf": "SF", "cr": "CR 4/", "Value #B": "TX dBm"}}},
+            {"id": "sortBy", "options": {"sort": [{"field": "Board"}]}},
+        ],
+        "fieldConfig": {"defaults": {"custom": {"align": "auto"}}, "overrides": []},
+        "options": {"showHeader": True, "cellHeight": "sm"},
+    }
+    return [in_use, table]
+
+
 def build():
     panels = [{
         "id": next(_ids), "type": "alertlist", "title": "Fleet alerts -- firing and pending",
@@ -420,6 +459,23 @@ def build():
                    y + 43, 0, 12, "percent"),
         timeseries("LoRa noise floor", "max by (sender) (mesh_board_radio_noise_floor_dbm)" + NAMED,
                    y + 43, 12, 12, "dBm"),
+    ]
+
+    # Radio settings and the route choice (firmware 2026-10-22).
+    y = 110
+    panels += radio_settings(y)
+    panels += [
+        timeseries("Route cost, by carrier",
+                   "max by (sender, interface) (mesh_board_route_cost_seconds)" + NAMED,
+                   y + 7, 0, 12, "s", legend="{{name}} {{interface}}",
+                   description="What a route over each carrier costs, as the board measures it: the fastest "
+                               "recent round trip plus the medium's airtime for a transfer (or an operator's "
+                               "cost), raised by failures. Among equal-hop routes the clearly cheaper carrier "
+                               "is used. No line: down, or never answered."),
+        timeseries("Route failure rate, by carrier",
+                   "max by (sender, interface) (mesh_board_route_failure_ratio)" + NAMED,
+                   y + 7, 12, 12, "percentunit", legend="{{name}} {{interface}}",
+                   steps=thresholds(("green", None), ("orange", 0.2), ("red", 0.5))),
     ]
     return {
         "uid": "mesh-boards", "title": "Mesh boards", "tags": ["mesh", "telemetry"],

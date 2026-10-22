@@ -86,6 +86,27 @@ class DetailMessage(unittest.TestCase):
         older = next(c for c in FIXTURE["encode"] if c["name"] == "rad_full")
         self.assertIsNone(report.detail_to_message(dc.decode(bytes.fromhex(older["hex"])), 1.0)["system"])
 
+    def test_radio_settings_and_route_costs_read_as_values_or_null(self):
+        case = next(c for c in FIXTURE["encode"] if c["name"] == "rad_radio_config_and_routes")
+        m = report.detail_to_message(dc.decode(bytes.fromhex(case["hex"])), 1.0)
+        self.assertEqual(m["radio_config"], {"frequency_hz": 867200000, "bandwidth_hz": 250000,
+                                             "spreading_factor": 11, "coding_rate": 5, "tx_power_dbm": 21,
+                                             "preset": "LongFast"})
+        self.assertEqual(m["routes"], [
+            {"interface": "lora", "cost_s": 40.5, "rtt_s": 0.471, "failure_ratio": 0.0, "operator_cost": False},
+            {"interface": "espnow", "cost_s": 4.4, "rtt_s": 0.427, "failure_ratio": 0.2, "operator_cost": True},
+            {"interface": "auto", "cost_s": None, "rtt_s": None, "failure_ratio": 1.0, "operator_cost": False}])
+        # Firmware from before them reports neither: null, not empty.
+        older = next(c for c in FIXTURE["encode"] if c["name"] == "rad_full")
+        m = report.detail_to_message(dc.decode(bytes.fromhex(older["hex"])), 1.0)
+        self.assertIsNone(m["radio_config"])
+        self.assertIsNone(m["routes"])
+
+    def test_a_custom_radio_setting_says_so(self):
+        d = dc.new_detail(radio_config_known=True, frequency_hz=868100000, bandwidth_hz=125000, sf=9, cr=5,
+                          tx_power_dbm=14, preset=None)
+        self.assertEqual(report.detail_to_message(dc.decode(dc.encode(d)), 1.0)["radio_config"]["preset"], "custom")
+
     def test_the_detail_topic_sits_under_the_board(self):
         self.assertEqual(report.detail_topic(0x0a0b0c0d), "mesh/telemetry/0a0b0c0d/detail")
 

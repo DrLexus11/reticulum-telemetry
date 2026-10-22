@@ -112,7 +112,13 @@ wire format is the firmware's `TelemetryDetailCodec.h` (0x21), pinned by
   "neighbours": [
     {"node": "11223344", "name": "board-2", "interface": "lora", "rssi_dbm": -68, "heard_s": 120}
   ],
-  "neighbours_truncated": false
+  "neighbours_truncated": false,
+  "radio_config": {"frequency_hz": 867200000, "bandwidth_hz": 250000, "spreading_factor": 11,
+                   "coding_rate": 5, "tx_power_dbm": 21, "preset": "LongFast"},
+  "routes": [
+    {"interface": "lora", "cost_s": 40.5, "rtt_s": 0.471, "failure_ratio": 0.0, "operator_cost": false},
+    {"interface": "auto", "cost_s": null, "rtt_s": null, "failure_ratio": 1.0, "operator_cost": false}
+  ]
 }
 ```
 
@@ -134,6 +140,18 @@ Built by `gateway/report.py` (`detail_to_message`), tested in
   gateway has heard that identity announce (NomadNet for boards, LXMF display
   names for people), else `null`. `heard_s` has minute resolution and
   saturates at 255 minutes.
+- `radio_config` (firmware from 2026-10-22; `null` or absent before, and on a
+  board without LoRa) is how the radio is **set**, where `radio` is what it
+  measures: `coding_rate` is n in 4/n, `preset` a firmware preset name or
+  `custom`. Boards whose frequency, bandwidth, spreading factor or coding rate
+  differ cannot hear each other: the backend's `radio_settings_info` labels
+  make that a count, and an alert.
+- `routes` (same firmware; `null` or absent before) is each measured
+  interface's route cost, as microReticulum chooses among equal-hop routes:
+  `cost_s` the fastest recent round trip plus the medium's airtime for a
+  transfer or an operator's cost, raised by failures (`null`: down, or never
+  answered); `rtt_s` the fastest recent round trip; `operator_cost` true when
+  an operator set the cost.
 
 ### Backfill, version 1 (T2)
 
