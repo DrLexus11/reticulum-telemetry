@@ -2891,7 +2891,7 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "count(count by (frequency_mhz, bandwidth_khz, sf, cr) (mesh_board_radio_settings_info)) or vector(0)",
+          "expr": "count(count by (frequency_mhz, bandwidth_khz, sf, cr) (mesh_board_radio_settings_info{backfill=\"\"})) or vector(0)",
           "instant": true,
           "range": false
         }
@@ -2956,7 +2956,7 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "(max by (sender, preset, frequency_mhz, bandwidth_khz, sf, cr) (mesh_board_radio_settings_info)) * on(sender) group_left(name) max by (sender, name) (mesh_board_info)",
+          "expr": "(max by (sender, preset, frequency_mhz, bandwidth_khz, sf, cr) (mesh_board_radio_settings_info{backfill=\"\"})) * on(sender) group_left(name) max by (sender, name) (mesh_board_info)",
           "instant": true,
           "range": false,
           "format": "table"
@@ -2967,7 +2967,7 @@
             "uid": "prometheus"
           },
           "refId": "B",
-          "expr": "(max by (sender) (mesh_board_radio_tx_power_dbm)) * on(sender) group_left(name) max by (sender, name) (mesh_board_info)",
+          "expr": "(max by (sender) (mesh_board_radio_tx_power_dbm{backfill=\"\"})) * on(sender) group_left(name) max by (sender, name) (mesh_board_info)",
           "instant": true,
           "range": false,
           "format": "table"

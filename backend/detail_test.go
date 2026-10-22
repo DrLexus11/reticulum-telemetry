@@ -237,3 +237,38 @@ func TestRadioSettingsAndRoutesSetTheirSeriesAndTheirAbsenceRemovesThem(t *testi
 		}
 	}
 }
+
+func TestTwoInterfacesOfOneKindAreOneRouteSeries(t *testing.T) {
+	m := NewDetailMetrics(prometheus.NewRegistry())
+	two := strings.Replace(detailFull, `"neighbours_truncated": false}`, `"neighbours_truncated": false,
+ "routes": [{"interface": "tcp_client", "cost_s": 0.5, "rtt_s": 0.4, "failure_ratio": 0.1, "operator_cost": false},
+            {"interface": "tcp_client", "cost_s": null, "rtt_s": null, "failure_ratio": 1, "operator_cost": true}]}`, 1)
+	if err := m.Apply([]byte(two)); err != nil {
+		t.Fatal(err)
+	}
+	s := "0a0b0c0d"
+	// The answered one, whole: its cost, its failure ratio, its flag.
+	if got := testutil.ToFloat64(m.routeCost.WithLabelValues(s, "tcp_client")); got != 0.5 {
+		t.Errorf("cost %v, want 0.5", got)
+	}
+	if got := testutil.ToFloat64(m.routeFail.WithLabelValues(s, "tcp_client")); got != 0.1 {
+		t.Errorf("failure ratio %v, want the answered route's 0.1", got)
+	}
+	if got := testutil.ToFloat64(m.routeOperator.WithLabelValues(s, "tcp_client")); got != 0 {
+		t.Errorf("operator flag %v, want the answered route's 0", got)
+	}
+	// Backfill emits one sample per series, never two with the same labels.
+	d, err := validateDetail([]byte(two))
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, smp := range detailSamples(d, "exact") {
+		if smp.labels["__name__"] == "mesh_board_route_failure_ratio" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("%d failure-ratio samples for one carrier kind, want 1", n)
+	}
+}

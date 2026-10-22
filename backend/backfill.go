@@ -206,7 +206,7 @@ func detailSamples(d Detail, quality string) []sample {
 		out = append(out, boardSample("radio_settings_info", s, quality, 1, ms,
 			"preset", l[0], "frequency_mhz", l[1], "bandwidth_khz", l[2], "sf", l[3], "cr", l[4]))
 	}
-	for _, r := range d.Routes {
+	for _, r := range routesByKind(d.Routes) {
 		if r.CostS != nil {
 			out = append(out, boardSample("route_cost_seconds", s, quality, *r.CostS, ms, "interface", r.Interface))
 		}

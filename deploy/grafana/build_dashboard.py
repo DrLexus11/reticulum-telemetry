@@ -339,9 +339,12 @@ RADIO_COLUMNS = [
 
 # Each board's LoRa settings (firmware 2026-10-22): boards on different
 # frequency, bandwidth, SF or CR cannot hear each other at all.
-SETTINGS = "max by (sender, preset, frequency_mhz, bandwidth_khz, sf, cr) (mesh_board_radio_settings_info)"
-SETTINGS_IN_USE = ("count(count by (frequency_mhz, bandwidth_khz, sf, cr) (mesh_board_radio_settings_info))"
-                   " or vector(0)")
+# Live series only (backfill=""): a backfilled report with older settings
+# would otherwise read as a second configuration (review, #17).
+SETTINGS = ('max by (sender, preset, frequency_mhz, bandwidth_khz, sf, cr)'
+            ' (mesh_board_radio_settings_info{backfill=""})')
+SETTINGS_IN_USE = ('count(count by (frequency_mhz, bandwidth_khz, sf, cr)'
+                   ' (mesh_board_radio_settings_info{backfill=""})) or vector(0)')
 
 
 def radio_settings(y):
@@ -358,7 +361,7 @@ def radio_settings(y):
                        "A row whose MHz, kHz, SF or CR differs from the others is a board that hears none of them.",
         "datasource": DS, "gridPos": {"x": 6, "y": y, "w": 18, "h": 7},
         "targets": [target("(%s)%s" % (SETTINGS, NAMED), "A", instant=True, table=True),
-                    target("(max by (sender) (mesh_board_radio_tx_power_dbm))%s" % NAMED, "B",
+                    target('(max by (sender) (mesh_board_radio_tx_power_dbm{backfill=""}))%s' % NAMED, "B",
                            instant=True, table=True)],
         "transformations": [
             {"id": "merge", "options": {}},

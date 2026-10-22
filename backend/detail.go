@@ -71,13 +71,47 @@ type Detail struct {
 		TxPowerDbm  float64 `json:"tx_power_dbm"`
 		Preset      string  `json:"preset"`
 	} `json:"radio_config"`
-	Routes []struct {
-		Interface    string   `json:"interface"`
-		CostS        *float64 `json:"cost_s"`
-		RttS         *float64 `json:"rtt_s"`
-		FailureRatio float64  `json:"failure_ratio"`
-		OperatorCost bool     `json:"operator_cost"`
-	} `json:"routes"`
+	Routes []Route `json:"routes"`
+}
+
+// Route is one interface's measured route cost, as a detail report carries it.
+type Route struct {
+	Interface    string   `json:"interface"`
+	CostS        *float64 `json:"cost_s"`
+	RttS         *float64 `json:"rtt_s"`
+	FailureRatio float64  `json:"failure_ratio"`
+	OperatorCost bool     `json:"operator_cost"`
+}
+
+// routesByKind keeps one route per interface kind, the series' only label:
+// two TCP clients would otherwise overwrite each other field by field and
+// describe neither (review, #17). The representative is the cheapest that
+// answers; among those that do not, the least failing. In report order.
+func routesByKind(routes []Route) []Route {
+	better := func(a, b Route) bool {
+		switch {
+		case a.CostS != nil && b.CostS == nil:
+			return true
+		case a.CostS == nil && b.CostS != nil:
+			return false
+		case a.CostS != nil && b.CostS != nil:
+			return *a.CostS < *b.CostS
+		}
+		return a.FailureRatio < b.FailureRatio
+	}
+	var out []Route
+	at := map[string]int{}
+	for _, r := range routes {
+		if i, seen := at[r.Interface]; seen {
+			if better(r, out[i]) {
+				out[i] = r
+			}
+			continue
+		}
+		at[r.Interface] = len(out)
+		out = append(out, r)
+	}
+	return out
 }
 
 // A link's labels: who heard whom over what, and both ends' names (the id
@@ -466,7 +500,7 @@ func (m *DetailMetrics) Apply(payload []byte) error {
 		}
 	}
 	var routeKinds []string
-	for _, r := range d.Routes {
+	for _, r := range routesByKind(d.Routes) {
 		routeKinds = append(routeKinds, r.Interface)
 		if r.CostS != nil {
 			m.routeCost.WithLabelValues(s, r.Interface).Set(*r.CostS)

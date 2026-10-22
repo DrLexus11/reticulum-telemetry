@@ -198,7 +198,7 @@ groups:
       datasourceUid: prometheus
       model:
         refId: A
-        expr: count(count by (frequency_mhz, bandwidth_khz, sf, cr) (mesh_board_radio_settings_info))
+        expr: count(count by (frequency_mhz, bandwidth_khz, sf, cr) (mesh_board_radio_settings_info{backfill=""}))
         instant: true
         intervalMs: 1000
         maxDataPoints: 43200
