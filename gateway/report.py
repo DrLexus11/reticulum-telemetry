@@ -104,6 +104,26 @@ def detail_to_message(d, received_at, hops=None, via=None, gateway=None, name=No
                   "clock_source": sources.get(d["time_source"], "other") if d["time_age_s"] is not None else None,
                   "clock_age_s": d["time_age_s"],
                   "ifac_rejected": d["ifac_rejected"]}
+    # How the LoRa radio is set (firmware 2026-10-22; older firmware omits it).
+    # Preset names are the firmware's RadioPresets.h, in order; 0xFF is custom.
+    presets = ["ShortTurbo", "ShortFast", "ShortSlow", "MediumFast", "MediumSlow", "LongFast",
+               "LongModerate", "LongSlow"]
+    radio_config = None
+    if d.get("radio_config_known"):
+        preset = d["preset"]
+        radio_config = {"frequency_hz": d["frequency_hz"], "bandwidth_hz": d["bandwidth_hz"],
+                        "spreading_factor": d["sf"], "coding_rate": d["cr"],
+                        "tx_power_dbm": d["tx_power_dbm"],
+                        "preset": presets[preset] if preset is not None and preset < len(presets) else "custom"}
+    # The measured route cost of each interface (microReticulum's route choice):
+    # null cost for an interface that is down or never answered.
+    routes = None
+    if d.get("routes_known"):
+        routes = [{"interface": dc.IF_NAMES.get(r["kind"], "other"),
+                   "cost_s": None if r["cost_ms"] is None else r["cost_ms"] / 1000.0,
+                   "rtt_s": None if r["rtt_ms"] is None else r["rtt_ms"] / 1000.0,
+                   "failure_ratio": r["fail_pct"] / 100.0, "operator_cost": r["operator"]}
+                  for r in d["routes"]]
     neighbours = []
     for n in d["neighbours"]:
         node = sender_hex(n["id"])
@@ -129,4 +149,6 @@ def detail_to_message(d, received_at, hops=None, via=None, gateway=None, name=No
         "neighbours": neighbours,
         "neighbours_truncated": d["neighbours_truncated"],
         "system": system,
+        "radio_config": radio_config,
+        "routes": routes,
     }

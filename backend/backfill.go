@@ -195,6 +195,28 @@ func detailSamples(d Detail, quality string) []sample {
 			out = append(out, boardSample("clock_info", s, quality, 1, ms, "source", *y.ClockSource))
 		}
 	}
+	if c := d.RadioConfig; c != nil {
+		out = append(out,
+			boardSample("radio_frequency_hz", s, quality, c.FrequencyHz, ms),
+			boardSample("radio_bandwidth_hz", s, quality, c.BandwidthHz, ms),
+			boardSample("radio_spreading_factor", s, quality, c.SF, ms),
+			boardSample("radio_coding_rate", s, quality, c.CR, ms),
+			boardSample("radio_tx_power_dbm", s, quality, c.TxPowerDbm, ms))
+		l := radioSettingsLabels(c.Preset, c.FrequencyHz, c.BandwidthHz, c.SF, c.CR)
+		out = append(out, boardSample("radio_settings_info", s, quality, 1, ms,
+			"preset", l[0], "frequency_mhz", l[1], "bandwidth_khz", l[2], "sf", l[3], "cr", l[4]))
+	}
+	for _, r := range routesByKind(d.Routes) {
+		if r.CostS != nil {
+			out = append(out, boardSample("route_cost_seconds", s, quality, *r.CostS, ms, "interface", r.Interface))
+		}
+		if r.RttS != nil {
+			out = append(out, boardSample("route_rtt_seconds", s, quality, *r.RttS, ms, "interface", r.Interface))
+		}
+		out = append(out,
+			boardSample("route_failure_ratio", s, quality, r.FailureRatio, ms, "interface", r.Interface),
+			boardSample("route_operator_cost", s, quality, boolf(r.OperatorCost), ms, "interface", r.Interface))
+	}
 	senderName := s
 	if d.Name != nil && *d.Name != "" {
 		senderName = *d.Name

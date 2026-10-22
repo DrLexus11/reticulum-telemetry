@@ -161,3 +161,114 @@ func TestAMalformedDetailIsRefusedAndChangesNothing(t *testing.T) {
 		t.Errorf("lora rx changed to %v by a refused message", got)
 	}
 }
+
+const radioAndRoutes = `"neighbours_truncated": false,
+ "radio_config": {"frequency_hz": 867200000, "bandwidth_hz": 250000, "spreading_factor": 11, "coding_rate": 5,
+  "tx_power_dbm": 21, "preset": "LongFast"},
+ "routes": [{"interface": "lora", "cost_s": 40.5, "rtt_s": 0.471, "failure_ratio": 0, "operator_cost": false},
+            {"interface": "espnow", "cost_s": 4.4, "rtt_s": 0.427, "failure_ratio": 0.2, "operator_cost": true},
+            {"interface": "auto", "cost_s": null, "rtt_s": null, "failure_ratio": 1, "operator_cost": false}]}`
+
+func TestRadioSettingsAndRoutesSetTheirSeriesAndTheirAbsenceRemovesThem(t *testing.T) {
+	m := NewDetailMetrics(prometheus.NewRegistry())
+	with := strings.Replace(detailFull, `"neighbours_truncated": false}`, radioAndRoutes, 1)
+	if err := m.Apply([]byte(with)); err != nil {
+		t.Fatal(err)
+	}
+	s := "0a0b0c0d"
+	for _, c := range []struct {
+		name      string
+		got, want float64
+	}{
+		{"frequency", testutil.ToFloat64(m.radioFreq.WithLabelValues(s)), 867200000},
+		{"sf", testutil.ToFloat64(m.radioSF.WithLabelValues(s)), 11},
+		{"tx power", testutil.ToFloat64(m.radioTxp.WithLabelValues(s)), 21},
+		{"settings info", testutil.ToFloat64(m.radioSettings.WithLabelValues(s, "LongFast", "867.200", "250", "11", "5")), 1},
+		{"lora cost", testutil.ToFloat64(m.routeCost.WithLabelValues(s, "lora")), 40.5},
+		{"espnow operator", testutil.ToFloat64(m.routeOperator.WithLabelValues(s, "espnow")), 1},
+		{"auto failing", testutil.ToFloat64(m.routeFail.WithLabelValues(s, "auto")), 1},
+	} {
+		if c.got != c.want {
+			t.Errorf("%s: got %v, want %v", c.name, c.got, c.want)
+		}
+	}
+	if n := testutil.CollectAndCount(m.routeCost); n != 2 {
+		t.Errorf("route cost: %d series, want 2 (a down interface has none)", n)
+	}
+	// A new preset replaces the settings series, never adds one.
+	sf9 := strings.Replace(strings.Replace(with, `"spreading_factor": 11`, `"spreading_factor": 9`, 1), `"LongFast"`, `"MediumFast"`, 1)
+	if err := m.Apply([]byte(sf9)); err != nil {
+		t.Fatal(err)
+	}
+	if n := testutil.CollectAndCount(m.radioSettings); n != 1 {
+		t.Errorf("settings info: %d series after a change, want 1", n)
+	}
+	// Older firmware or gateway: neither section; their series go.
+	if err := m.Apply([]byte(detailFull)); err != nil {
+		t.Fatal(err)
+	}
+	if n := testutil.CollectAndCount(m.radioSettings) + testutil.CollectAndCount(m.radioSF) +
+		testutil.CollectAndCount(m.routeCost) + testutil.CollectAndCount(m.routeFail); n != 0 {
+		t.Errorf("%d radio settings or route series left after a report without them", n)
+	}
+	// Backfill carries them too.
+	d, err := validateDetail([]byte(with))
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, smp := range detailSamples(d, "exact") {
+		names[smp.labels["__name__"]] = true
+	}
+	for _, want := range []string{"mesh_board_radio_settings_info", "mesh_board_radio_tx_power_dbm", "mesh_board_route_cost_seconds"} {
+		if !names[want] {
+			t.Errorf("backfill has no %s sample", want)
+		}
+	}
+	// Out of range is refused.
+	for _, bad := range []string{
+		strings.Replace(with, `"spreading_factor": 11`, `"spreading_factor": 13`, 1),
+		strings.Replace(with, `"failure_ratio": 0.2`, `"failure_ratio": 1.2`, 1),
+		strings.Replace(with, `"preset": "LongFast"`, `"preset": ""`, 1),
+		strings.Replace(with, `"tx_power_dbm": 21, `, ``, 1),
+	} {
+		if err := m.Apply([]byte(bad)); err == nil {
+			t.Error("accepted an out-of-range or incomplete radio/route section")
+		}
+	}
+}
+
+func TestTwoInterfacesOfOneKindAreOneRouteSeries(t *testing.T) {
+	m := NewDetailMetrics(prometheus.NewRegistry())
+	two := strings.Replace(detailFull, `"neighbours_truncated": false}`, `"neighbours_truncated": false,
+ "routes": [{"interface": "tcp_client", "cost_s": 0.5, "rtt_s": 0.4, "failure_ratio": 0.1, "operator_cost": false},
+            {"interface": "tcp_client", "cost_s": null, "rtt_s": null, "failure_ratio": 1, "operator_cost": true}]}`, 1)
+	if err := m.Apply([]byte(two)); err != nil {
+		t.Fatal(err)
+	}
+	s := "0a0b0c0d"
+	// The answered one, whole: its cost, its failure ratio, its flag.
+	if got := testutil.ToFloat64(m.routeCost.WithLabelValues(s, "tcp_client")); got != 0.5 {
+		t.Errorf("cost %v, want 0.5", got)
+	}
+	if got := testutil.ToFloat64(m.routeFail.WithLabelValues(s, "tcp_client")); got != 0.1 {
+		t.Errorf("failure ratio %v, want the answered route's 0.1", got)
+	}
+	if got := testutil.ToFloat64(m.routeOperator.WithLabelValues(s, "tcp_client")); got != 0 {
+		t.Errorf("operator flag %v, want the answered route's 0", got)
+	}
+	// Backfill emits one sample per series, never two with the same labels.
+	d, err := validateDetail([]byte(two))
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, smp := range detailSamples(d, "exact") {
+		if smp.labels["__name__"] == "mesh_board_route_failure_ratio" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("%d failure-ratio samples for one carrier kind, want 1", n)
+	}
+}

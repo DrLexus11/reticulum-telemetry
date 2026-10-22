@@ -1,5 +1,5 @@
 {
- "note": "Board detail report, telemetry wire format 0x21 (TelemetryDetailCodec.h, tools/telemetry_detail_codec.py). Synthetic values only. 'encode': reports and their exact bytes (interface bytes are cumulative since boot, store size whole KB, ages whole minutes, counts saturate, percentages cap at 100, neighbours cut to fit 380 bytes and flagged). 'decode': bytes and what they decode to, or null when refused; decoded store size is whole KB x 1024, ages whole minutes x 60, last_sync_s null for never. FLAG_SYSTEM (0x08), appended after the neighbours 2026-10-08: temperature, LoRa packets and CRC errors, the clock's source and age, IFAC rejections; the earlier cases' bytes are unchanged.",
+ "note": "Board detail report, telemetry wire format 0x21 (TelemetryDetailCodec.h, tools/telemetry_detail_codec.py). Synthetic values only. 'encode': reports and their exact bytes (interface bytes are cumulative since boot, store size whole KB, ages whole minutes, counts saturate, percentages cap at 100, neighbours cut to fit 380 bytes and flagged). 'decode': bytes and what they decode to, or null when refused; decoded store size is whole KB x 1024, ages whole minutes x 60, last_sync_s null for never. FLAG_SYSTEM (0x08), appended after the neighbours 2026-10-08: temperature, LoRa packets and CRC errors, the clock's source and age, IFAC rejections; the earlier cases' bytes are unchanged. Radio configuration (flag 0x10) and route costs (flag 0x20), 2026-10-22, append after the system section; cost and round trip 0xFFFF mean down or unknown, preset 0xFF custom.",
  "version": 33,
  "encode": [
   {
@@ -695,6 +695,116 @@
     "ifac_rejected": null
    },
    "hex": "2108010203040000003ca1b2c3d401560f696d70722d72616430312d726576320000800000000000000000ffffffff00ffffffffffff"
+  },
+  {
+   "name": "rad_radio_config_and_routes",
+   "detail": {
+    "sender_id": 168496141,
+    "uptime_s": 3600,
+    "fw_hash": "a1b2c3d4",
+    "fw_version": 342,
+    "env": "impr-rad01-rev1",
+    "interfaces": [
+     {
+      "kind": 1,
+      "up": true,
+      "rx_bytes": 48000,
+      "tx_bytes": 12000
+     },
+     {
+      "kind": 3,
+      "up": false,
+      "rx_bytes": 0,
+      "tx_bytes": 0
+     },
+     {
+      "kind": 4,
+      "up": true,
+      "rx_bytes": 5000000,
+      "tx_bytes": 2000000
+     },
+     {
+      "kind": 2,
+      "up": true,
+      "rx_bytes": 70000,
+      "tx_bytes": 5
+     }
+    ],
+    "radio_known": true,
+    "rssi": -97,
+    "snr_q": -22,
+    "noise": -110,
+    "utilisation_pct": 12,
+    "airtime_pct": 3,
+    "propagation_known": true,
+    "store_messages": 8,
+    "store_bytes": 3300,
+    "pn_peers": 2,
+    "sync_ok": 5,
+    "sync_fail": 12,
+    "last_sync_s": 7260,
+    "neighbours": [
+     {
+      "id": 235868177,
+      "kind": 1,
+      "rssi": -88,
+      "heard_s": 120
+     },
+     {
+      "id": 303240213,
+      "kind": 4,
+      "rssi": -128,
+      "heard_s": 30
+     },
+     {
+      "id": 370612249,
+      "kind": 3,
+      "rssi": -70,
+      "heard_s": 70000
+     }
+    ],
+    "neighbours_truncated": false,
+    "system_known": false,
+    "temperature_c": -128,
+    "lora_rx": 0,
+    "lora_tx": 0,
+    "lora_crc_errors": null,
+    "time_source": 0,
+    "time_age_s": null,
+    "ifac_rejected": null,
+    "radio_config_known": true,
+    "frequency_hz": 867200000,
+    "bandwidth_hz": 250000,
+    "sf": 11,
+    "cr": 5,
+    "tx_power_dbm": 21,
+    "preset": 5,
+    "routes_known": true,
+    "routes": [
+     {
+      "kind": 1,
+      "cost_ms": 40500,
+      "rtt_ms": 471,
+      "fail_pct": 0,
+      "operator": false
+     },
+     {
+      "kind": 3,
+      "cost_ms": 4400,
+      "rtt_ms": 427,
+      "fail_pct": 20,
+      "operator": true
+     },
+     {
+      "kind": 7,
+      "cost_ms": null,
+      "rtt_ms": null,
+      "fail_pct": 100,
+      "operator": false
+     }
+    ]
+   },
+   "hex": "21330a0b0c0d00000e10a1b2c3d401560f696d70722d72616430312d726576310401010000bb8000002ee0030000000000000000000401004c4b40001e8480020100011170000000059fea920c0300080003020005000c0079030e0f101101a802121314150480001617181903baff33b06c000003d0900b05150503019e3401d7000003113001ab140107ffffffff6400"
   }
  ],
  "decode": [
@@ -774,7 +884,16 @@
     "lora_crc_errors": null,
     "time_source": 0,
     "time_age_s": null,
-    "ifac_rejected": null
+    "ifac_rejected": null,
+    "radio_config_known": false,
+    "frequency_hz": 0,
+    "bandwidth_hz": 0,
+    "sf": 0,
+    "cr": 0,
+    "tx_power_dbm": 0,
+    "preset": null,
+    "routes_known": false,
+    "routes": []
    }
   },
   {
@@ -809,7 +928,16 @@
     "lora_crc_errors": null,
     "time_source": 0,
     "time_age_s": null,
-    "ifac_rejected": null
+    "ifac_rejected": null,
+    "radio_config_known": false,
+    "frequency_hz": 0,
+    "bandwidth_hz": 0,
+    "sf": 0,
+    "cr": 0,
+    "tx_power_dbm": 0,
+    "preset": null,
+    "routes_known": false,
+    "routes": []
    }
   },
   {
@@ -844,7 +972,16 @@
     "lora_crc_errors": null,
     "time_source": 0,
     "time_age_s": null,
-    "ifac_rejected": null
+    "ifac_rejected": null,
+    "radio_config_known": false,
+    "frequency_hz": 0,
+    "bandwidth_hz": 0,
+    "sf": 0,
+    "cr": 0,
+    "tx_power_dbm": 0,
+    "preset": null,
+    "routes_known": false,
+    "routes": []
    }
   },
   {
@@ -1162,7 +1299,16 @@
     "lora_crc_errors": null,
     "time_source": 0,
     "time_age_s": null,
-    "ifac_rejected": null
+    "ifac_rejected": null,
+    "radio_config_known": false,
+    "frequency_hz": 0,
+    "bandwidth_hz": 0,
+    "sf": 0,
+    "cr": 0,
+    "tx_power_dbm": 0,
+    "preset": null,
+    "routes_known": false,
+    "routes": []
    }
   },
   {
@@ -1266,7 +1412,16 @@
     "lora_crc_errors": 13,
     "time_source": 7,
     "time_age_s": 1020,
-    "ifac_rejected": 2
+    "ifac_rejected": 2,
+    "radio_config_known": false,
+    "frequency_hz": 0,
+    "bandwidth_hz": 0,
+    "sf": 0,
+    "cr": 0,
+    "tx_power_dbm": 0,
+    "preset": null,
+    "routes_known": false,
+    "routes": []
    }
   },
   {
@@ -1301,13 +1456,132 @@
     "lora_crc_errors": null,
     "time_source": 0,
     "time_age_s": null,
-    "ifac_rejected": null
+    "ifac_rejected": null,
+    "radio_config_known": false,
+    "frequency_hz": 0,
+    "bandwidth_hz": 0,
+    "sf": 0,
+    "cr": 0,
+    "tx_power_dbm": 0,
+    "preset": null,
+    "routes_known": false,
+    "routes": []
    }
   },
   {
    "name": "system_section_cut_short",
    "hex": "210b0a0b0c0d00000e10a1b2c3d401560f696d70722d72616430312d726576310401010000bb8000002ee0030000000000000000000401004c4b40001e8480020100011170000000059fea920c0300080003020005000c0079030e0f101101a802121314150480001617181903baff2f00003e6e000023a00000000d070011000000",
    "detail": null
+  },
+  {
+   "name": "rad_radio_config_and_routes_decoded",
+   "hex": "21330a0b0c0d00000e10a1b2c3d401560f696d70722d72616430312d726576310401010000bb8000002ee0030000000000000000000401004c4b40001e8480020100011170000000059fea920c0300080003020005000c0079030e0f101101a802121314150480001617181903baff33b06c000003d0900b05150503019e3401d7000003113001ab140107ffffffff6400",
+   "detail": {
+    "sender_id": 168496141,
+    "uptime_s": 3600,
+    "fw_hash": "a1b2c3d4",
+    "fw_version": 342,
+    "env": "impr-rad01-rev1",
+    "interfaces": [
+     {
+      "kind": 1,
+      "up": true,
+      "rx_bytes": 48000,
+      "tx_bytes": 12000
+     },
+     {
+      "kind": 3,
+      "up": false,
+      "rx_bytes": 0,
+      "tx_bytes": 0
+     },
+     {
+      "kind": 4,
+      "up": true,
+      "rx_bytes": 5000000,
+      "tx_bytes": 2000000
+     },
+     {
+      "kind": 2,
+      "up": true,
+      "rx_bytes": 70000,
+      "tx_bytes": 5
+     }
+    ],
+    "radio_known": true,
+    "rssi": -97,
+    "snr_q": -22,
+    "noise": -110,
+    "utilisation_pct": 12,
+    "airtime_pct": 3,
+    "propagation_known": true,
+    "store_messages": 8,
+    "store_bytes": 3072,
+    "pn_peers": 2,
+    "sync_ok": 5,
+    "sync_fail": 12,
+    "last_sync_s": 7260,
+    "neighbours": [
+     {
+      "id": 235868177,
+      "kind": 1,
+      "rssi": -88,
+      "heard_s": 120
+     },
+     {
+      "id": 303240213,
+      "kind": 4,
+      "rssi": -128,
+      "heard_s": 0
+     },
+     {
+      "id": 370612249,
+      "kind": 3,
+      "rssi": -70,
+      "heard_s": 15300
+     }
+    ],
+    "neighbours_truncated": false,
+    "system_known": false,
+    "temperature_c": -128,
+    "lora_rx": 0,
+    "lora_tx": 0,
+    "lora_crc_errors": null,
+    "time_source": 0,
+    "time_age_s": null,
+    "ifac_rejected": null,
+    "radio_config_known": true,
+    "frequency_hz": 867200000,
+    "bandwidth_hz": 250000,
+    "sf": 11,
+    "cr": 5,
+    "tx_power_dbm": 21,
+    "preset": 5,
+    "routes_known": true,
+    "routes": [
+     {
+      "kind": 1,
+      "cost_ms": 40500,
+      "rtt_ms": 471,
+      "fail_pct": 0,
+      "operator": false
+     },
+     {
+      "kind": 3,
+      "cost_ms": 4400,
+      "rtt_ms": 427,
+      "fail_pct": 20,
+      "operator": true
+     },
+     {
+      "kind": 7,
+      "cost_ms": null,
+      "rtt_ms": null,
+      "fail_pct": 100,
+      "operator": false
+     }
+    ]
+   }
   }
  ]
 }

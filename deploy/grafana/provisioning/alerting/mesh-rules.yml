@@ -180,3 +180,36 @@ groups:
             type: gt
             params:
             - 0
+  - uid: mesh-radio-settings-differ
+    title: Boards on different LoRa settings
+    condition: C
+    for: 35m
+    noDataState: OK
+    execErrState: Error
+    labels:
+      severity: warning
+    annotations:
+      summary: 'The boards report {{ $values.A }} different LoRa settings (frequency, bandwidth, SF, CR): boards on different settings cannot hear each other'
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: count(count by (frequency_mhz, bandwidth_khz, sf, cr) (mesh_board_radio_settings_info{backfill=""}))
+        instant: true
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 1
