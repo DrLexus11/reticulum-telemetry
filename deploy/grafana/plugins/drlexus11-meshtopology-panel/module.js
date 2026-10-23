@@ -121,7 +121,8 @@ function (React, grafanaData, grafanaUi, grafanaRuntime) {
   }
 
   // The graph: boards from their reports, everyone else from the links that
-  // name them. Two directions over one carrier are one edge.
+  // name them. Two directions over one carrier are one edge; several carriers
+  // between the same two nodes fan out (spread, below).
   function buildModel(series, theme, options) {
     var names = {};
     rowsFor(series, "A").forEach(function (r) { if (r.node) names[r.node] = r.name; });
@@ -214,10 +215,30 @@ function (React, grafanaData, grafanaUi, grafanaRuntime) {
       // on screen after the option is turned off.
       edge.label = options.edgeLabels ? c.name + (best !== null ? " " + Math.round(best) + " dBm" : "") : "";
       edge.font = Object.assign({}, font, { size: 11, align: "horizontal" });
+      edge.smooth = spread(p, pairs, key, edge.from);
       return edge;
     });
 
     return { nodes: nodes, edges: edges };
+  }
+
+  // Two nodes linked over several carriers get one edge per carrier. Straight,
+  // they lie on top of each other -- arrows, labels and all -- whichever way
+  // each points. So the edges of one pair fan out: alternate sides of the line,
+  // further out the more there are; a lone edge stays straight. Sides are taken
+  // along a -> b (the pair's sorted ids), and vis-network bends curvedCW to the
+  // right of the edge's own from -> to, so an edge drawn b -> a flips. Always
+  // returned, never omitted: DataSet.update() merges, so a curve left out would
+  // stay after its sibling edge went away.
+  function spread(p, pairs, key, from) {
+    var siblings = Object.keys(pairs).filter(function (k) {
+      return pairs[k].a === p.a && pairs[k].b === p.b;
+    }).sort();
+    var offset = siblings.indexOf(key) - (siblings.length - 1) / 2;
+    if (offset === 0) return { enabled: false };
+    var clockwise = (offset > 0) === (from === p.a);
+    return { enabled: true, type: clockwise ? "curvedCW" : "curvedCCW",
+             roundness: Math.min(0.9, 0.35 * Math.abs(offset) * 2 / Math.max(1, siblings.length - 1)) };
   }
 
   // Crosstalk's network options (NetworkVisualiser.vue), themed for Grafana.
@@ -226,7 +247,8 @@ function (React, grafanaData, grafanaUi, grafanaRuntime) {
       interaction: { tooltipDelay: 0, hover: true, hoverConnectedEdges: true,
                      keyboard: { enabled: false }, zoomSpeed: 0.65 },
       edges: {
-        smooth: { enabled: false },   // straight: labels sit at the true midpoint (Crosstalk curves them)
+        smooth: { enabled: false },   // straight: labels sit at the true midpoint (Crosstalk curves them);
+                                      // edges sharing a pair of nodes curve apart (spread)
         hoverWidth: 0.6,
         selectionWidth: 1
       },
