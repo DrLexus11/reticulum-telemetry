@@ -2,7 +2,7 @@
   "title": "GFSK soak",
   "uid": "gfsk-soak",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "editable": true,
   "refresh": "30s",
   "time": {
@@ -512,6 +512,85 @@
           }
         }
       ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "LoRa received per 15 min (GFSK on = 1)",
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "increase(gfsk_soak_lora_counter{counter=\"packets_received\"}[15m])",
+          "legendFormat": "{{board}} packets received"
+        },
+        {
+          "refId": "B",
+          "expr": "increase(gfsk_soak_lora_counter{board=\"rev1\",counter=\"packets_sent\"}[15m])",
+          "legendFormat": "rev1 packets sent (reference)"
+        },
+        {
+          "refId": "C",
+          "expr": "gfsk_soak_gfsk_on",
+          "legendFormat": "GFSK on"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "showPoints": "always",
+            "pointSize": 4
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "GFSK on"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.drawStyle",
+                "value": "line"
+              },
+              {
+                "id": "custom.lineInterpolation",
+                "value": "stepAfter"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 15
+              },
+              {
+                "id": "max",
+                "value": 1
+              },
+              {
+                "id": "min",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
     }
   ]
 }
