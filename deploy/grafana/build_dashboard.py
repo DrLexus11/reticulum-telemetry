@@ -379,6 +379,54 @@ def radio_settings(y):
     return [in_use, table]
 
 
+def gfsk_lane_row(y):
+    """The GFSK lane's bench soaks (microReticulum_Firmware tools/gfsk_soak_exporter.py,
+    dev scrape job gfsk-soak). Collapsed, and empty on any stack without that exporter."""
+    row = {"id": next(_ids), "type": "row", "title": "GFSK lane -- bench soaks (deck only; empty elsewhere)",
+           "collapsed": True, "gridPos": {"x": 0, "y": y, "w": 24, "h": 1}, "panels": []}
+    burst = "{{sender}} → {{listener}} {{bitrate}} bit/s {{frame}} B"
+
+    def at(panel, x, dy, w, h, **defaults):
+        panel["gridPos"] = {"x": x, "y": y + 1 + dy, "w": w, "h": h}
+        panel["fieldConfig"]["defaults"].update(defaults)
+        row["panels"].append(panel)
+
+    def state(text_0, text_1, good):
+        return [{"type": "value", "options": {"0": {"text": text_0, "color": "red" if good else "green"},
+                                              "1": {"text": text_1, "color": "green" if good else "red"}}}]
+
+    at(stat("Soak", "gfsk_soak_stopped", 0, 4, steps=thresholds(("green", None), ("red", 1))),
+       0, 0, 4, 4, mappings=state("running", "STOPPED", good=False))
+    at(stat("LoRa back after last burst", "gfsk_soak_lora_restored", 0, 4,
+            steps=thresholds(("red", None), ("green", 1))),
+       4, 0, 4, 4, mappings=state("NO", "yes", good=True))
+    at(stat("Delivered, all bursts", "sum(gfsk_soak_frames_received_total) / sum(gfsk_soak_frames_sent_total)",
+            0, 4, unit="percentunit", steps=thresholds(("red", None), ("orange", 0.95), ("green", 0.99))),
+       8, 0, 4, 4)
+    at(stat("CRC errors", "sum(gfsk_soak_crc_errors_total)", 0, 4,
+            steps=thresholds(("green", None), ("orange", 1))),
+       12, 0, 4, 4)
+    at(stat("Since last burst", "time() - gfsk_soak_last_run_timestamp_seconds", 0, 8, unit="s",
+            steps=thresholds(("green", None), ("orange", 420), ("red", 900))),
+       16, 0, 8, 4)
+    at(timeseries("Delivery per burst", "gfsk_soak_last_delivery_ratio", 0, 0, 12, "percentunit", legend=burst),
+       0, 4, 12, 8, min=0, max=1)
+    at(timeseries("Payload throughput per burst", "gfsk_soak_last_payload_bytes_per_second", 0, 0, 12, "Bps",
+                  legend=burst),
+       12, 4, 12, 8, min=0)
+    at(timeseries("Listener RSSI", "gfsk_soak_last_rssi_dbm", 0, 0, 12, "dBm", legend=burst), 0, 12, 12, 8)
+    at(timeseries("Board uptime, from the soak (a drop is a restart)", "gfsk_soak_board_uptime_seconds",
+                  0, 0, 12, "s", legend="{{board}}"),
+       12, 12, 12, 8, min=0)
+    stop = named_table("Stop reason (empty while running)", [], 0, 0, 24, 4)
+    stop["targets"] = [target("gfsk_soak_stop_info", "A", instant=True, table=True)]
+    stop["transformations"] = [{"id": "organize", "options": {"excludeByName": {
+        "Time": True, "Value": True, "__name__": True, "instance": True, "job": True}}}]
+    stop["gridPos"] = {"x": 0, "y": y + 21, "w": 24, "h": 4}
+    row["panels"].append(stop)
+    return row
+
+
 def build():
     panels = [{
         "id": next(_ids), "type": "alertlist", "title": "Fleet alerts -- firing and pending",
@@ -480,6 +528,7 @@ def build():
                    y + 7, 12, 12, "percentunit", legend="{{name}} {{interface}}",
                    steps=thresholds(("green", None), ("orange", 0.2), ("red", 0.5))),
     ]
+    panels.append(gfsk_lane_row(y + 15))
     return {
         "uid": "mesh-boards", "title": "Mesh boards", "tags": ["mesh", "telemetry"],
         "timezone": "browser", "refresh": "30s", "schemaVersion": 39, "version": 4,
