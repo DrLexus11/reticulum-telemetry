@@ -25,6 +25,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import announce_schedule  # noqa: E402
 import backfill  # noqa: E402
 import board_names  # noqa: E402
 import lxmf_inbox  # noqa: E402
@@ -316,15 +317,24 @@ class Gateway:
         self.destination.announce(app_data=self.name.encode("utf-8"))
 
     def serve_forever(self):
-        print("[gateway] %s on <%s>, announcing every %d s"
+        """Announce at start, every interval, and when one of the host's
+        Reticulum interfaces comes up (announce_schedule.py), so a board on a
+        network just joined hears this gateway at once."""
+        print("[gateway] %s on <%s>, announcing every %d s and when an interface comes up"
               % (self.name, self.destination.hash.hex(), self.announce_interval), flush=True)
-        self.announce()
+        schedule = announce_schedule.AnnounceSchedule(self.announce_interval)
         while True:
-            time.sleep(self.announce_interval)
-            try:
-                self.announce()
-            except Exception as error:                      # noqa: BLE001
-                print("[gateway] announce failed: %s" % error, flush=True)
+            now = time.monotonic()
+            reason = schedule.due(now, announce_schedule.interface_states(self.reticulum, self.rns.Transport))
+            if reason is not None:
+                if isinstance(reason, list):
+                    print("[gateway] announcing: %s up" % ", ".join(reason), flush=True)
+                try:
+                    self.announce()
+                except Exception as error:                      # noqa: BLE001
+                    print("[gateway] announce failed: %s" % error, flush=True)
+                schedule.announced(now)
+            time.sleep(announce_schedule.POLL_S)
 
 
 def main():
