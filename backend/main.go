@@ -32,8 +32,11 @@ func main() {
 		log.Fatal(err)
 	}
 	staleAfter := flag.Duration("stale-after", staleDefault,
-		"drop a board's health and detail series once its latest report is older than this; 0 keeps them "+
-			"(default from TELEMETRY_STALE_AFTER, else 15m: three 300 s report intervals)")
+		"drop a board's health series once its latest health report is older than this, and its detail "+
+			"series once no report of either kind is newer; 0 keeps them. Must exceed the longest "+
+			"\"Report Interval (s)\" any board is set to (firmware range 60-3600 s), or that board's "+
+			"series vanish between reports. Default: TELEMETRY_STALE_AFTER, else 15m (three of the "+
+			"fleet's 300 s intervals)")
 	flag.Parse()
 	if *staleAfter < 0 {
 		log.Fatalf("-stale-after %v is negative", *staleAfter)
@@ -42,8 +45,10 @@ func main() {
 	reg := prometheus.NewRegistry()
 	metrics := NewMetrics(reg)
 	details := NewDetailMetrics(reg)
-	metrics.Stale = Staleness{After: *staleAfter}
-	details.Stale = Staleness{After: *staleAfter}
+	// One freshness for both: a board's detail stays while it is heard at all.
+	fresh := NewFreshness(*staleAfter, nil)
+	metrics.Fresh = fresh
+	details.Fresh = fresh
 	backfill := NewBackfill(reg, *remoteWrite)
 	boardPositions := NewPositionMetrics(reg)
 	probes := NewProbeMetrics(reg)

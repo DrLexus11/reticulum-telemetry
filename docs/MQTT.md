@@ -23,12 +23,19 @@ contract, versioned like the wire format.
 - **Retained**, so a subscriber that starts late sees every board's latest
   state at once. A board that stops reporting keeps its last message;
   `received_at` is how a consumer tells it is old. The backend keeps a board's
-  health and detail series only while its latest `received_at` is within
-  `-stale-after` (`TELEMETRY_STALE_AFTER`, default 15 min: three report
-  intervals); past that only `mesh_board_report_received_timestamp_seconds`,
+  health series while its latest health report is within `-stale-after`
+  (`TELEMETRY_STALE_AFTER`, default 15 min: three of the fleet's 300 s
+  intervals), and its detail series while it has been heard by either kind
+  of report within that bound, since detail comes only every 30 min (up to a
+  day). Past it, only `mesh_board_report_received_timestamp_seconds`,
   `mesh_board_detail_received_timestamp_seconds` and `mesh_board_info` stay.
-  A retained report replayed on reconnect is judged the same way, by
-  `received_at`, not by when it arrived.
+  **The bound must exceed the longest "Report Interval (s)" any board is set
+  to** (the firmware accepts 60-3600 s), or that board's health series vanish
+  between its reports. The silence panels and alert read the received
+  timestamp, so a longer bound costs nothing there; it only keeps a silent
+  board's last values up longer. A retained report replayed on reconnect is
+  judged by `received_at`, not by when it arrived, and a report older than one
+  already applied is ignored.
 - **QoS 1 from the gateway to the broker**: on that leg a report may arrive
   twice, never not at all. It says nothing about subscribers: one without a
   persistent session misses reports while it is away and gets only the

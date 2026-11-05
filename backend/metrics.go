@@ -59,11 +59,12 @@ type Metrics struct {
 	// join it by sender, so a name does not multiply every other series.
 	info    *prometheus.GaugeVec
 	refused prometheus.Counter
-	// Stale drops a silent board's health series (Prune); zero keeps them.
-	Stale  Staleness
+	// Fresh drops a board's health series once its latest health report is
+	// past the bound (Prune); nil keeps them.
+	Fresh  *Freshness
 	mu     sync.Mutex
 	nameOf map[string]string
-	// lastAt is each board's latest received_at, for Prune.
+	// lastAt is each board's latest health received_at: never lowered.
 	lastAt map[string]float64
 }
 
@@ -89,7 +90,7 @@ func (m *Metrics) Prune() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for sender, at := range m.lastAt {
-		if m.Stale.stale(at) {
+		if m.Fresh.Stale(at) {
 			m.dropHealth(sender)
 		}
 	}
@@ -198,7 +199,8 @@ func validate(payload []byte) (Report, error) {
 // message leaves every series as it was: it never overwrites a good report.
 // A report already stale when it arrives -- the broker's retained copy,
 // replayed on reconnect -- sets only the received timestamp and the name, so
-// a board long silent does not come back as if live.
+// a board long silent does not come back as if live. A report older than one
+// already applied -- a bridge replaying its queue late -- changes nothing.
 func (m *Metrics) Apply(payload []byte) error {
 	r, err := validate(payload)
 	if err != nil {
@@ -208,10 +210,14 @@ func (m *Metrics) Apply(payload []byte) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	s := r.Sender
+	if previous, ok := m.lastAt[s]; ok && r.ReceivedAt < previous {
+		return nil
+	}
 	m.received.WithLabelValues(s).Set(r.ReceivedAt)
 	m.lastAt[s] = r.ReceivedAt
+	m.Fresh.Heard(s, r.ReceivedAt)
 	m.setName(s, r.Name)
-	if m.Stale.stale(r.ReceivedAt) {
+	if m.Fresh.Stale(r.ReceivedAt) {
 		m.dropHealth(s)
 		return nil
 	}

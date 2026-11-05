@@ -303,11 +303,19 @@ type DetailMetrics struct {
 	// hear alike: mesh_node_info{node, name}. One series per node.
 	nodeInfo *prometheus.GaugeVec
 	refused  prometheus.Counter
-	// Stale drops a silent board's detail series (Prune); zero keeps them.
-	Stale Staleness
+	// Fresh, shared with the health metrics, drops a board's detail series
+	// once nothing of either kind has been heard from it within the bound
+	// (Prune); nil keeps them. Detail comes far less often than health
+	// (30 min by default, up to a day), so its own age says nothing.
+	Fresh *Freshness
 
-	mu         sync.Mutex
-	lastAt     map[string]float64
+	mu sync.Mutex
+	// lastAt is each board's latest detail received_at: never lowered.
+	lastAt map[string]float64
+	// pending holds a detail report that arrived while its board looked
+	// silent -- a retained one replayed before the board's health report --
+	// until the board is heard within the bound, or a newer one replaces it.
+	pending    map[string]Detail
 	firmwareOf map[string][]string
 	ifsOf      map[string][]string
 	linksOf    map[string][][]string
@@ -378,6 +386,7 @@ func NewDetailMetrics(reg prometheus.Registerer) *DetailMetrics {
 		settingsOf: map[string][]string{},
 		routesOf:   map[string][]string{},
 		lastAt:     map[string]float64{},
+		pending:    map[string]Detail{},
 	}
 }
 
@@ -402,22 +411,27 @@ func (m *DetailMetrics) dropDetail(sender string) {
 	delete(m.routesOf, sender)
 }
 
-// Prune drops the detail series of every board whose latest detail report is
-// older than the stale bound. The backend runs it before each scrape.
+// Prune drops the detail series of every board not heard, by either kind of
+// report, within the bound, and sets a held one's whose board has been since.
+// The backend runs it before each scrape.
 func (m *DetailMetrics) Prune() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	for sender, at := range m.lastAt {
-		if m.Stale.stale(at) {
+	for sender := range m.lastAt {
+		if m.Fresh.Silent(sender) {
 			m.dropDetail(sender)
+		} else if d, ok := m.pending[sender]; ok {
+			delete(m.pending, sender)
+			m.set(d)
 		}
 	}
 }
 
 // Apply validates one detail message and sets that board's series. A refused
-// message leaves every series as it was. A report already stale when it
-// arrives (a retained one, replayed on reconnect) sets only the received
-// timestamp.
+// message leaves every series as it was, and so does one older than a detail
+// report already applied (a bridge replaying its queue late). One that
+// arrives while its board looks silent -- a retained report, replayed on
+// reconnect -- sets only the received timestamp, and is held for Prune.
 func (m *DetailMetrics) Apply(payload []byte) error {
 	d, err := validateDetail(payload)
 	if err != nil {
@@ -427,12 +441,26 @@ func (m *DetailMetrics) Apply(payload []byte) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	s := d.Sender
-	m.received.WithLabelValues(s).Set(d.ReceivedAt)
-	m.lastAt[s] = d.ReceivedAt
-	if m.Stale.stale(d.ReceivedAt) {
-		m.dropDetail(s)
+	if previous, ok := m.lastAt[s]; ok && d.ReceivedAt < previous {
 		return nil
 	}
+	m.received.WithLabelValues(s).Set(d.ReceivedAt)
+	m.lastAt[s] = d.ReceivedAt
+	m.Fresh.Heard(s, d.ReceivedAt)
+	if m.Fresh.Silent(s) {
+		m.dropDetail(s)
+		m.pending[s] = d
+		return nil
+	}
+	delete(m.pending, s)
+	m.set(d)
+	return nil
+}
+
+// set writes one board's detail series from a validated report. Called with
+// mu held.
+func (m *DetailMetrics) set(d Detail) {
+	s := d.Sender
 
 	env := ""
 	if d.Firmware.Env != nil {
@@ -583,7 +611,6 @@ func (m *DetailMetrics) Apply(payload []byte) error {
 		}
 	}
 	m.linksOf[s] = links
-	return nil
 }
 
 // radioSettingsLabels: preset, frequency in MHz, bandwidth in kHz, SF, CR --

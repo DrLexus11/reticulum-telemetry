@@ -3,35 +3,72 @@ package main
 import (
 	"fmt"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 )
 
-// DefaultStaleAfter is three report intervals (300 s each): a board silent
-// that long has stopped reporting, and its last values are history, not state.
+// DefaultStaleAfter is three of the fleet's 300 s report intervals. The
+// firmware accepts 60-3600 s ("Report Interval (s)"): the bound must exceed
+// the longest interval any board is set to, or that board's health series
+// vanish between its reports. A board's silence is shown by its received
+// timestamp ("Silent", the silence alert) whatever the bound; the bound
+// decides only how long its last values stay up after it falls silent.
 const DefaultStaleAfter = 15 * time.Minute
 
-// Staleness judges a report by the time the gateway received it (received_at),
-// never by when the backend did: the broker replays a retained report on every
-// reconnect, and a twelve-day-old one must not look live because it just
-// arrived. A zero bound disables it.
-type Staleness struct {
+// Freshness judges reports by the time the gateway received them
+// (received_at), never by when the backend did: the broker replays a retained
+// report on every reconnect, and a twelve-day-old one must not look live
+// because it just arrived. One Freshness is shared by the health and detail
+// metrics, so it knows when each board was last heard by either kind of
+// report. A zero bound, or a nil *Freshness, never judges anything stale.
+type Freshness struct {
 	After time.Duration
 	Now   func() time.Time
+
+	mu     sync.Mutex
+	latest map[string]float64
 }
 
-func (s Staleness) stale(receivedAt float64) bool {
-	if s.After <= 0 {
+func NewFreshness(after time.Duration, now func() time.Time) *Freshness {
+	return &Freshness{After: after, Now: now, latest: map[string]float64{}}
+}
+
+// Stale: received at `at`, older than the bound now.
+func (f *Freshness) Stale(at float64) bool {
+	if f == nil || f.After <= 0 {
 		return false
 	}
-	now := s.Now
+	now := f.Now
 	if now == nil {
 		now = time.Now
 	}
-	age := float64(now().UnixNano())/1e9 - receivedAt
-	return age > s.After.Seconds()
+	return float64(now().UnixNano())/1e9-at > f.After.Seconds()
+}
+
+// Heard records a report of either kind; an older one never lowers it.
+func (f *Freshness) Heard(sender string, at float64) {
+	if f == nil {
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if previous, ok := f.latest[sender]; !ok || at > previous {
+		f.latest[sender] = at
+	}
+}
+
+// Silent: nothing from this board, of either kind, within the bound.
+func (f *Freshness) Silent(sender string) bool {
+	if f == nil {
+		return false
+	}
+	f.mu.Lock()
+	at, ok := f.latest[sender]
+	f.mu.Unlock()
+	return ok && f.Stale(at)
 }
 
 // staleAfterDefault is the -stale-after flag's default: TELEMETRY_STALE_AFTER
