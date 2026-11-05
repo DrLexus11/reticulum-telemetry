@@ -27,11 +27,28 @@ func main() {
 	listen := flag.String("listen", "127.0.0.1:9101", "address to serve /metrics on")
 	remoteWrite := flag.String("remote-write", "http://127.0.0.1:9090/api/v1/write",
 		"Prometheus remote-write endpoint for backfilled reports (T2)")
+	staleDefault, err := staleAfterDefault()
+	if err != nil {
+		log.Fatal(err)
+	}
+	staleAfter := flag.Duration("stale-after", staleDefault,
+		"drop a board's health series once its latest health report is older than this, and its detail "+
+			"series once no report of either kind is newer; 0 keeps them. Must exceed the longest "+
+			"\"Report Interval (s)\" any board is set to (firmware range 60-3600 s), or that board's "+
+			"series vanish between reports. Default: TELEMETRY_STALE_AFTER, else 15m (three of the "+
+			"fleet's 300 s intervals)")
 	flag.Parse()
+	if *staleAfter < 0 {
+		log.Fatalf("-stale-after %v is negative", *staleAfter)
+	}
 
 	reg := prometheus.NewRegistry()
 	metrics := NewMetrics(reg)
 	details := NewDetailMetrics(reg)
+	// One freshness for both: a board's detail stays while it is heard at all.
+	fresh := NewFreshness(*staleAfter, nil)
+	metrics.Fresh = fresh
+	details.Fresh = fresh
 	backfill := NewBackfill(reg, *remoteWrite)
 	boardPositions := NewPositionMetrics(reg)
 	probes := NewProbeMetrics(reg)
@@ -75,7 +92,9 @@ func main() {
 	client := mqtt.NewClient(opts)
 	client.Connect()
 
-	http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
-	log.Printf("serving /metrics on %s", *listen)
+	// Stale boards are pruned at scrape time: a board silent past the bound
+	// keeps its received timestamp and name, and loses the rest.
+	http.Handle("/metrics", promhttp.HandlerFor(pruningGatherer(reg, metrics.Prune, details.Prune), promhttp.HandlerOpts{}))
+	log.Printf("serving /metrics on %s; stale after %v", *listen, *staleAfter)
 	log.Fatal(http.ListenAndServe(*listen, nil))
 }

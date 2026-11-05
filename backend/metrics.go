@@ -59,8 +59,41 @@ type Metrics struct {
 	// join it by sender, so a name does not multiply every other series.
 	info    *prometheus.GaugeVec
 	refused prometheus.Counter
-	mu      sync.Mutex
-	nameOf  map[string]string
+	// Fresh drops a board's health series once its latest health report is
+	// past the bound (Prune); nil keeps them.
+	Fresh  *Freshness
+	mu     sync.Mutex
+	nameOf map[string]string
+	// lastAt is each board's latest health received_at: never lowered.
+	lastAt map[string]float64
+}
+
+// healthSeries are the series a stale board loses. Its received timestamp and
+// its name (info) stay: "Last report", "Silent" and the silence alert are
+// built on them.
+func (m *Metrics) healthSeries() []*prometheus.GaugeVec {
+	return []*prometheus.GaugeVec{m.uptime, m.boots, m.crashes, m.panics, m.heap, m.largest, m.psram,
+		m.paths, m.nodes, m.blePeers, m.espnow, m.relaying, m.relayExpected, m.timeCurrent, m.hops,
+		m.batteryMV, m.batteryPct, m.present, m.up, m.reset}
+}
+
+// dropHealth removes one board's health series. Called with mu held.
+func (m *Metrics) dropHealth(sender string) {
+	for _, g := range m.healthSeries() {
+		g.DeletePartialMatch(prometheus.Labels{"sender": sender})
+	}
+}
+
+// Prune drops the health series of every board whose latest report is older
+// than the stale bound. The backend runs it before each scrape.
+func (m *Metrics) Prune() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for sender, at := range m.lastAt {
+		if m.Fresh.Stale(at) {
+			m.dropHealth(sender)
+		}
+	}
 }
 
 func gauge(reg prometheus.Registerer, name, help string, labels ...string) *prometheus.GaugeVec {
@@ -95,6 +128,7 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		reset:         gauge(reg, "reset_reason", "1 for why the board's current run began, 0 for every other reason.", "reason"),
 		info:          gauge(reg, "info", "1, labelled with the board's announced name (the sender id until one is heard).", "name"),
 		nameOf:        map[string]string{},
+		lastAt:        map[string]float64{},
 		refused: prometheus.NewCounter(prometheus.CounterOpts{Namespace: "mesh", Name: "reports_refused_total",
 			Help: "Messages on the telemetry topics that were not a version 1 report."}),
 	}
@@ -163,14 +197,30 @@ func validate(payload []byte) (Report, error) {
 
 // Apply validates one MQTT payload and sets that board's series. A refused
 // message leaves every series as it was: it never overwrites a good report.
+// A report already stale when it arrives -- the broker's retained copy,
+// replayed on reconnect -- sets only the received timestamp and the name, so
+// a board long silent does not come back as if live. A report older than one
+// already applied -- a bridge replaying its queue late -- changes nothing.
 func (m *Metrics) Apply(payload []byte) error {
 	r, err := validate(payload)
 	if err != nil {
 		m.refused.Inc()
 		return err
 	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	s := r.Sender
+	if previous, ok := m.lastAt[s]; ok && r.ReceivedAt < previous {
+		return nil
+	}
 	m.received.WithLabelValues(s).Set(r.ReceivedAt)
+	m.lastAt[s] = r.ReceivedAt
+	m.Fresh.Heard(s, r.ReceivedAt)
+	m.setName(s, r.Name)
+	if m.Fresh.Stale(r.ReceivedAt) {
+		m.dropHealth(s)
+		return nil
+	}
 	m.uptime.WithLabelValues(s).Set(r.UptimeS)
 	m.boots.WithLabelValues(s).Set(r.Boots)
 	m.crashes.WithLabelValues(s).Set(r.Crashes)
@@ -208,16 +258,14 @@ func (m *Metrics) Apply(payload []byte) error {
 	for _, reason := range resets {
 		m.reset.WithLabelValues(s, reason).Set(boolf(reason == r.Reset))
 	}
-	m.setName(s, r.Name)
 	return nil
 }
 
 // setName keeps exactly one info series per board. A board not yet named is
 // shown by its sender id; a name that was heard is kept if a later report
 // arrives without one (a gateway restarted before it heard the announce).
+// Called with mu held.
 func (m *Metrics) setName(sender string, name *string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	next := sender
 	if name != nil && *name != "" {
 		next = *name
