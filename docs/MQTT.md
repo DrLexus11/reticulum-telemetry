@@ -22,7 +22,13 @@ contract, versioned like the wire format.
   event, not a design case.
 - **Retained**, so a subscriber that starts late sees every board's latest
   state at once. A board that stops reporting keeps its last message;
-  `received_at` is how a consumer tells it is old.
+  `received_at` is how a consumer tells it is old. The backend keeps a board's
+  health and detail series only while its latest `received_at` is within
+  `-stale-after` (`TELEMETRY_STALE_AFTER`, default 15 min: three report
+  intervals); past that only `mesh_board_report_received_timestamp_seconds`,
+  `mesh_board_detail_received_timestamp_seconds` and `mesh_board_info` stay.
+  A retained report replayed on reconnect is judged the same way, by
+  `received_at`, not by when it arrived.
 - **QoS 1 from the gateway to the broker**: on that leg a report may arrive
   twice, never not at all. It says nothing about subscribers: one without a
   persistent session misses reports while it is away and gets only the

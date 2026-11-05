@@ -303,8 +303,11 @@ type DetailMetrics struct {
 	// hear alike: mesh_node_info{node, name}. One series per node.
 	nodeInfo *prometheus.GaugeVec
 	refused  prometheus.Counter
+	// Stale drops a silent board's detail series (Prune); zero keeps them.
+	Stale Staleness
 
 	mu         sync.Mutex
+	lastAt     map[string]float64
 	firmwareOf map[string][]string
 	ifsOf      map[string][]string
 	linksOf    map[string][][]string
@@ -374,11 +377,47 @@ func NewDetailMetrics(reg prometheus.Registerer) *DetailMetrics {
 		nodeName:   map[string]string{},
 		settingsOf: map[string][]string{},
 		routesOf:   map[string][]string{},
+		lastAt:     map[string]float64{},
+	}
+}
+
+// dropDetail removes every series of one board's detail report but its
+// received timestamp, and what Apply remembers to replace them. Node names
+// (mesh_node_info) are the mesh's, not the board's, and stay. Called with mu
+// held.
+func (m *DetailMetrics) dropDetail(sender string) {
+	for _, g := range []*prometheus.GaugeVec{m.firmware, m.ifUp, m.ifRx, m.ifTx,
+		m.rssi, m.snr, m.noise, m.utilisation, m.airtime,
+		m.pnMessages, m.pnBytes, m.pnPeers, m.pnOK, m.pnFail, m.pnAge, m.truncated,
+		m.temperature, m.loraRx, m.loraTx, m.loraCRC, m.clockAge, m.clockInfo, m.ifacRejected,
+		m.linkHeard, m.linkRSSI,
+		m.radioFreq, m.radioBW, m.radioSF, m.radioCR, m.radioTxp, m.radioSettings,
+		m.routeCost, m.routeRTT, m.routeFail, m.routeOperator} {
+		g.DeletePartialMatch(prometheus.Labels{"sender": sender})
+	}
+	delete(m.firmwareOf, sender)
+	delete(m.ifsOf, sender)
+	delete(m.linksOf, sender)
+	delete(m.settingsOf, sender)
+	delete(m.routesOf, sender)
+}
+
+// Prune drops the detail series of every board whose latest detail report is
+// older than the stale bound. The backend runs it before each scrape.
+func (m *DetailMetrics) Prune() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for sender, at := range m.lastAt {
+		if m.Stale.stale(at) {
+			m.dropDetail(sender)
+		}
 	}
 }
 
 // Apply validates one detail message and sets that board's series. A refused
-// message leaves every series as it was.
+// message leaves every series as it was. A report already stale when it
+// arrives (a retained one, replayed on reconnect) sets only the received
+// timestamp.
 func (m *DetailMetrics) Apply(payload []byte) error {
 	d, err := validateDetail(payload)
 	if err != nil {
@@ -389,6 +428,11 @@ func (m *DetailMetrics) Apply(payload []byte) error {
 	defer m.mu.Unlock()
 	s := d.Sender
 	m.received.WithLabelValues(s).Set(d.ReceivedAt)
+	m.lastAt[s] = d.ReceivedAt
+	if m.Stale.stale(d.ReceivedAt) {
+		m.dropDetail(s)
+		return nil
+	}
 
 	env := ""
 	if d.Firmware.Env != nil {
