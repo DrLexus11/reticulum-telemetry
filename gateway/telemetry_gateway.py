@@ -319,23 +319,37 @@ class Gateway:
     def serve_forever(self):
         """Announce at start, every interval, and when one of the host's
         Reticulum interfaces comes up (announce_schedule.py), so a board on a
-        network just joined hears this gateway at once."""
+        network just joined hears this gateway at once. Interfaces are read on
+        a thread of their own: a shared-instance RPC that stalls leaves the
+        snapshot stale and never holds up an announce."""
         print("[gateway] %s on <%s>, announcing every %d s and when an interface comes up"
               % (self.name, self.destination.hash.hex(), self.announce_interval), flush=True)
         schedule = announce_schedule.AnnounceSchedule(self.announce_interval)
+        reader = announce_schedule.InterfaceReader(
+            lambda: announce_schedule.interface_states(self.reticulum, self.rns.Transport)).start()
+        stale = False
+        started = time.monotonic()
         while True:
             now = time.monotonic()
-            reason = schedule.due(now, announce_schedule.interface_states(self.reticulum, self.rns.Transport))
+            states = announce_schedule.fresh(reader.latest(), now)
+            if states is None and not stale and now - started > announce_schedule.STALE_S:
+                stale = True
+                print("[gateway] interface states stale (shared instance not answering); "
+                      "announcing on the interval only", flush=True)
+            elif states is not None and stale:
+                stale = False
+                print("[gateway] interface states current again", flush=True)
+            reason = schedule.due(now, states)
             if reason is not None:
                 if isinstance(reason, list):
-                    print("[gateway] announcing: %s up" % ", ".join(reason), flush=True)
+                    print("[gateway] announcing: %s up (next such gap %d s)"
+                          % (", ".join(reason), schedule.gap_s), flush=True)
                 try:
                     self.announce()
                 except Exception as error:                      # noqa: BLE001
                     print("[gateway] announce failed: %s" % error, flush=True)
                 schedule.announced(now)
             time.sleep(announce_schedule.POLL_S)
-
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])

@@ -1,7 +1,9 @@
 """When the gateway announces (gateway/announce_schedule.py): at start, every
-interval, and when an interface comes up -- at most once per MIN_GAP_S."""
+interval, and when an interface comes up -- rationed, with a gap that doubles
+while interfaces keep coming up, and never waiting on the shared instance."""
 
 import sys
+import threading
 import unittest
 from pathlib import Path
 
@@ -59,21 +61,57 @@ class Schedule(unittest.TestCase):
         s = AnnounceSchedule(600, min_gap_s=10)
         run(s, 0, {"A": False, "B": False})
         self.assertEqual(run(s, 20, {"A": True, "B": False}), ["A"])
-        # B comes up three seconds later: held until the gap has passed.
+        self.assertEqual(s.gap_s, 20)
+        # B comes up three seconds later: held until the (doubled) gap has passed.
         self.assertIsNone(run(s, 23, {"A": True, "B": True}))
-        self.assertIsNone(run(s, 29, {"A": True, "B": True}))
-        self.assertEqual(run(s, 30, {"A": True, "B": True}), ["B"])
-        self.assertIsNone(run(s, 32, {"A": True, "B": True}))
+        self.assertIsNone(run(s, 39, {"A": True, "B": True}))
+        self.assertEqual(run(s, 40, {"A": True, "B": True}), ["B"])
+        self.assertIsNone(run(s, 42, {"A": True, "B": True}))
 
-    def test_flapping_announces_at_most_once_per_gap(self):
+    def test_flapping_backs_off_to_the_interval(self):
         s = AnnounceSchedule(600, min_gap_s=10)
         run(s, 0, {"A": True})
-        announces = 0
-        for t in range(1, 101):            # down and up every second for 100 s
+        times = []
+        for t in range(1, 3601):           # down and up every second for an hour
             if run(s, t, {"A": t % 2 == 0}) is not None:
-                announces += 1
-        self.assertLessEqual(announces, 10)
-        self.assertGreaterEqual(announces, 9)
+                times.append(t)
+        # 10, 20, 40, 80, 160, 320 s gaps, then one per interval.
+        self.assertEqual(times[:6], [10, 30, 70, 150, 310, 630])
+        self.assertEqual(len(times), 10)
+        gaps = [b - a for a, b in zip(times, times[1:])]
+        self.assertEqual(gaps[-4:], [600, 600, 600, 600])
+
+    def test_a_fresh_client_name_every_poll_backs_off(self):
+        # A TCP server's spawned interface is named after the client's ephemeral
+        # port: a client stuck reconnecting is a "new" interface on every poll.
+        # interface_states() leaves spawned ones out; this is the backstop if a
+        # churning name reaches the schedule anyway.
+        s = AnnounceSchedule(600, min_gap_s=10)
+        run(s, 0, UP)
+        announces = []
+        for poll, t in enumerate(range(2, 7202, 2)):   # two hours of polls
+            states = {**UP, "TCPInterface[Client on LAN/10.0.0.2:%d]" % (40000 + poll): True}
+            if run(s, t, states) is not None:
+                announces.append(t)
+        # Without backoff this would be one per 10 s: 720. With it, about one
+        # per interval once the gap has grown.
+        self.assertLessEqual(len(announces), 18)
+        self.assertEqual(s.gap_s, 600)
+
+    def test_a_quiet_interval_resets_the_gap(self):
+        s = AnnounceSchedule(600, min_gap_s=10)
+        run(s, 0, {"A": True})
+        run(s, 5, {"A": False})
+        run(s, 10, {"A": True})
+        run(s, 15, {"A": False})
+        self.assertEqual(run(s, 30, {"A": True}), ["A"])
+        self.assertEqual(s.gap_s, 40)
+        self.assertEqual(run(s, 630, {"A": True}), "interval")
+        # Nothing comes up for an interval; then A does, 15 s after the last
+        # announce: the gap is back to 10 s, so it is announced at once.
+        run(s, 640, {"A": False})
+        self.assertEqual(run(s, 645, {"A": True}), ["A"])
+        self.assertEqual(s.gap_s, 20)
 
     def test_the_start_announce_counts_toward_the_gap(self):
         s = AnnounceSchedule(600, min_gap_s=10)
@@ -96,6 +134,18 @@ class Schedule(unittest.TestCase):
         self.assertIsNone(run(s, 600, {"A": True}))
         self.assertEqual(run(s, 900, {"A": True}), "interval")
 
+    def test_no_fresh_look_is_no_change(self):
+        s = AnnounceSchedule(600, min_gap_s=10)
+        self.assertEqual(run(s, 0, None), "start")       # the start announce waits on no read
+        self.assertIsNone(run(s, 5, UP))                  # the first fresh look only learns
+        self.assertIsNone(run(s, 50, None))
+        self.assertEqual(run(s, 600, None), "interval")   # the interval never waits on a read
+        self.assertIsNone(run(s, 610, None))
+        # A stale gap does not lose what it hid: down before it, up after.
+        self.assertIsNone(run(s, 620, {**UP, "AutoInterface[Default]": False}))
+        self.assertIsNone(run(s, 625, None))
+        self.assertEqual(run(s, 630, UP), ["AutoInterface[Default]"])
+
     def test_shared_instance_away_then_back_announces(self):
         # interface_states() leaves rnsd's interfaces out while its RPC fails.
         s = AnnounceSchedule(600, min_gap_s=10)
@@ -105,8 +155,8 @@ class Schedule(unittest.TestCase):
 
 
 class _Interface:
-    def __init__(self, name, online):
-        self.name, self.online = name, online
+    def __init__(self, name, online, parent=None):
+        self.name, self.online, self.parent_interface = name, online, parent
 
     def __str__(self):
         return self.name
@@ -153,21 +203,95 @@ class States(unittest.TestCase):
         self.assertEqual(announce_schedule.interface_states(reticulum, _Transport([auto])),
                          {"AutoInterface[Default]": True})
 
+    def test_spawned_client_interfaces_are_left_out(self):
+        server = _Interface("TCPServerInterface[LAN/0.0.0.0:4242]", True)
+        client = _Interface("TCPInterface[Client on LAN/10.0.0.2:51234]", True, parent=server)
+        reticulum = _Reticulum({"interfaces": [
+            {"name": "TCPServerInterface[LAN/0.0.0.0:4242]", "status": True},
+            {"name": "TCPInterface[Client on LAN/10.0.0.3:40001]", "status": True,
+             "parent_interface_name": "TCPServerInterface[LAN/0.0.0.0:4242]"},
+            {"name": "AutoInterfacePeer[Default/fe80::1]", "status": True,
+             "parent_interface_name": "AutoInterface[Default]"},
+            {"name": "AutoInterface[Default]", "status": True, "parent_interface_name": None},
+        ]})
+        self.assertEqual(announce_schedule.interface_states(reticulum, _Transport([server, client])), {
+            "TCPServerInterface[LAN/0.0.0.0:4242]": True,
+            "AutoInterface[Default]": True,
+        })
+
     def test_missing_fields_are_tolerated(self):
         reticulum = _Reticulum({"interfaces": [{"status": True}, {"name": "X"}]})
         self.assertEqual(announce_schedule.interface_states(reticulum, _Transport(None)), {"X": False})
         self.assertEqual(announce_schedule.interface_states(_Reticulum(None), _Transport([])), {})
 
 
+class Reader(unittest.TestCase):
+
+    def test_a_snapshot_goes_stale(self):
+        clock = [100.0]
+        reader = announce_schedule.InterfaceReader(lambda: dict(UP), clock=lambda: clock[0])
+        self.assertIsNone(announce_schedule.fresh(reader.latest(), 100.0))   # nothing read yet
+        reader.read_once()
+        self.assertEqual(announce_schedule.fresh(reader.latest(), 105.0), UP)
+        self.assertEqual(announce_schedule.fresh(reader.latest(), 100.0 + announce_schedule.STALE_S), UP)
+        self.assertIsNone(announce_schedule.fresh(reader.latest(), 100.1 + announce_schedule.STALE_S))
+
+    def test_a_read_that_hangs_holds_up_nothing(self):
+        release = threading.Event()
+        reads = []
+
+        def hang():
+            reads.append(1)
+            release.wait(5)
+            return dict(UP)
+
+        reader = announce_schedule.InterfaceReader(hang, poll_s=0.01).start()
+        try:
+            for _ in range(200):
+                if reads:
+                    break
+                threading.Event().wait(0.01)
+            self.assertTrue(reads, "the reader thread never read")
+            # The read is stuck; the caller still gets an answer at once, and
+            # the schedule still makes its start and interval announces.
+            self.assertEqual(reader.latest(), (None, None))
+            s = AnnounceSchedule(600)
+            self.assertEqual(run(s, 0, announce_schedule.fresh(reader.latest(), 0)), "start")
+            self.assertEqual(run(s, 600, announce_schedule.fresh(reader.latest(), 600)), "interval")
+        finally:
+            release.set()
+
+    def test_a_failing_read_does_not_end_the_thread(self):
+        calls = []
+        done = threading.Event()
+
+        def flaky():
+            calls.append(1)
+            if len(calls) == 1:
+                raise ConnectionRefusedError()
+            done.set()
+            return {}
+
+        reader = announce_schedule.InterfaceReader(flaky, poll_s=0.01).start()
+        self.assertTrue(done.wait(5))
+        self.assertIsNotNone(reader.latest()[0])
+
+
 class GatewayUsesIt(unittest.TestCase):
 
-    def test_serve_forever_asks_the_schedule(self):
+    def test_serve_forever_reads_on_a_thread_and_asks_the_schedule(self):
         source = (ROOT / "gateway" / "telemetry_gateway.py").read_text(encoding="utf-8")
         body = source[source.index("def serve_forever"):source.index("\ndef main")]
         self.assertIn("announce_schedule.AnnounceSchedule(self.announce_interval)", body)
-        self.assertIn("announce_schedule.interface_states(self.reticulum, self.rns.Transport)", body)
+        self.assertIn("announce_schedule.InterfaceReader(", body)
+        self.assertIn("announce_schedule.interface_states(self.reticulum, self.rns.Transport)).start()", body)
+        self.assertIn("announce_schedule.fresh(reader.latest(), now)", body)
         self.assertIn("schedule.announced(now)", body)
         self.assertIn("time.monotonic()", body)
+        # The loop itself never calls the RPC.
+        loop = body[body.index("while True:"):]
+        self.assertNotIn("interface_states(", loop)
+        self.assertNotIn("get_interface_stats", loop)
 
 
 if __name__ == "__main__":

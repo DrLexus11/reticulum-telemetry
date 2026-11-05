@@ -13,9 +13,10 @@ board --(one encrypted Reticulum packet)--> gateway --MQTT--> backend --> Promet
   largest block, which carriers are present and up, peers, paths, battery.
 - **The gateway** (`gateway/`, Python) is any node with an uplink. It announces
   that destination -- at start, every `--announce-interval`, and when one of its
-  host's Reticulum interfaces comes up (at most once per 10 s,
-  `gateway/announce_schedule.py`) -- decodes each report and publishes it as
-  JSON on `mesh/telemetry/<sender>`, retained.
+  host's Reticulum interfaces comes up (10 s apart at first, the gap doubling
+  up to the interval while they keep coming up; `gateway/announce_schedule.py`)
+  -- decodes each report and publishes it as JSON on `mesh/telemetry/<sender>`,
+  retained.
 - **The backend** (`backend/`, Go) subscribes and serves Prometheus metrics,
   `mesh_board_*`, one series set per board.
 - **The topic layout** -- what is published, and what is held for commands: `docs/MQTT.md`.
